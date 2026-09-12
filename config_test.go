@@ -27,6 +27,9 @@ func TestConfigurationDefaults(t *testing.T) {
 	if cfg != defaultConfiguration() {
 		t.Fatalf("%+v", cfg)
 	}
+	if cfg.SlideSeconds != 120 {
+		t.Fatalf("default slide duration = %d, want 120", cfg.SlideSeconds)
+	}
 	if _, err = readConfiguration([]string{"--config", "missing.yaml"}, io.Discard); err == nil {
 		t.Fatal("explicit missing config ignored")
 	}

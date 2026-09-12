@@ -27,7 +27,7 @@ type configuration struct {
 }
 
 func defaultConfiguration() configuration {
-	return configuration{Listen: ":8177", BaseURL: "http://10.17.17.90:8177", SlideSeconds: 180, Screen: "slideshow", Timezone: "America/New_York", DataDir: "./data", FrontpagesURL: "http://10.17.17.90:8100"}
+	return configuration{Listen: ":8177", BaseURL: "http://10.17.17.90:8177", SlideSeconds: 120, Screen: "slideshow", Timezone: "America/New_York", DataDir: "./data", FrontpagesURL: "http://10.17.17.90:8100"}
 }
 
 // Precedence: built-in defaults < YAML values < explicitly supplied CLI flags.
