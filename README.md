@@ -1,6 +1,6 @@
 # Terminal Server
 
-A small Go BYOS server for **TRMNL X**, showing random cowsay fortunes, a month calendar, quarter progress, San Juan weather, and newspaper front pages, **one minute per slide** by default. It renders native **1872 × 1404, 4-bit indexed grayscale PNGs** with embedded fonts. No browser, ImageMagick, database, `fortune`, or `cowsay` installation is needed.
+A small Go BYOS server for **TRMNL X**, showing random cowsay fortunes, a month calendar, quarter progress, San Juan weather, newspaper front pages, and configurable Polymarket pages, **one minute per slide** by default. It renders native **1872 × 1404, 4-bit indexed grayscale PNGs** with embedded fonts. No browser, ImageMagick, database, `fortune`, or `cowsay` installation is needed.
 
 The binary includes the 255 quotes from the original `custom_fortunes/my_quotes.txt`. Fortune image URLs stay tied to the exact quote. The calendar takes its inspiration from a paper wall calendar: a bold month/year band, Sunday-first ruled grid, adjacent-month references, a prominent full date, today's cell highlighted in black, and a large time display.
 
@@ -24,17 +24,17 @@ go build -o bin/terminal-server .
 
 Open **http://10.17.17.90:8177/preview** for an automatically refreshing browser slideshow. Use **Calendar** or **Fortune** to preview either screen directly, or open `/preview?screen=calendar` and `/preview?screen=cowsay`. Browser previews never advance the device's playlist.
 
-The default is `--screen slideshow --refresh 60`. Each successful device display request advances weather → calendar → quarter progress → fortune → each available newspaper cover → weather, independently per device. A center touchbar tap also advances the slideshow. Restarting the server starts the device sequence at the first available configured slide. Use `--screen cowsay`, `--screen calendar`, or `--screen quarter` to show just one screen, and `--refresh` to change seconds per screen. Browser slideshow selection uses wall-clock slots and may be on a different slide from the device. Calendar image URLs preserve the scheduled minute even when downloaded after midnight.
+The default is `--screen slideshow --refresh 60`. Each successful device display request advances weather → calendar → quarter progress → fortune → each available newspaper cover → each configured Polymarket page → weather, independently per device. A center touchbar tap also advances the slideshow. Restarting the server starts the device sequence at the first available configured slide. Use `--screen cowsay`, `--screen calendar`, or `--screen quarter` to show just one screen, and `--refresh` to change seconds per screen. Browser slideshow selection uses wall-clock slots and may be on a different slide from the device. Calendar image URLs preserve the scheduled minute even when downloaded after midnight.
 
 ## Configuration
 
 Slide order is configurable in `config.yaml`:
 
 ```yaml
-slide_order: [weather, calendar, quarter, quote, newspapers]
+slide_order: [weather, calendar, quarter, quote, newspapers, polymarket]
 ```
 
-Reorder entries or omit screens you do not want, then restart the server. `quote` is the cowsay fortune screen; `newspapers` expands to one slide per discovered newspaper in the source server's catalog order (currently NYT, then El Nuevo Día). This includes all current screen types. Disabled weather and unavailable newspaper entries are skipped. If no configured slides are available, fortune is the temporary fallback. Empty lists, duplicate entries, and unknown names are rejected. This setting controls both the device and browser slideshow; single-screen mode ignores the order. Each expanded slide uses `slide_seconds`.
+Reorder entries or omit screens you do not want, then restart the server. `quote` is the cowsay fortune screen; `newspapers` expands to one slide per discovered newspaper in the source server's catalog order (currently NYT, then El Nuevo Día). `polymarket` expands to the configured event/market pages in their list order; blank URL slots are skipped. This includes all current screen types. Disabled weather and unavailable newspaper entries are skipped. If no configured slides are available, fortune is the temporary fallback. Empty lists, duplicate entries, and unknown names are rejected. This setting controls both the device and browser slideshow; single-screen mode ignores the order. Each expanded slide uses `slide_seconds`.
 
 The server reads **`config.yaml`** from its working directory at startup. To change the time between slides, edit:
 
@@ -79,6 +79,8 @@ Preview with `/preview?screen=quarter`, or run only this screen using `--screen 
 
 ## San Juan weather
 
+See the Polymarket section below for optional prediction-market slides after newspapers.
+
 Weather appears first by default. Inspired by the [Daily Weather recipe](https://trmnl.com/recipes/150460), it shows the full date, Puerto Rico local time (AST year-round), a large **forecast** temperature in Fahrenheit, rain chance, wind in mph, a short outlook, and five daily high/night-low cards. The battery footer remains visible. This is a forecast, not a live thermometer or emergency alert system.
 
 Data comes directly from the free, public [NOAA/NWS API](https://www.weather.gov/documentation/services-web-api), using the San Juan forecast office's grid forecasts. No API key or subscription is needed. The server resolves coordinates via `/points`, then requests the returned forecast URL with `units=us`. It identifies itself with a User-Agent and checks all URLs/redirects stay on api.weather.gov. It does not scrape the weather.gov website. UV index is omitted because this NWS forecast endpoint does not supply it.
@@ -95,6 +97,26 @@ weather_longitude: -66.1057
 Restart after editing. Changing the name alone does not change the forecast; coordinates select the NWS grid. Weather dates always use `America/Puerto_Rico`, independently of the calendar timezone. Set `weather_enabled: false` to remove it, or `screen: weather` for weather only. Preview at `/preview?screen=weather`.
 
 Forecast data is shared in memory for 15 minutes to respect NWS rate limits; rendered weather images are not cached. Newspaper covers remain completely uncached. Each weather image shows its render time and NWS issue time. On fetch failure, the slide displays an unavailable message and retries after two minutes, without interrupting other slides or silently using stale data. Forecasts issued over 24 hours ago are rejected. Missing values show a dash, not zero. Today's high disappears after its forecast period ends; night lows belong to the evening when that period starts. Daily rain chance is the maximum of the remaining day/night period probabilities, not a calculated whole-day probability.
+
+## Polymarket pages
+
+Inspired by the [TRMNL Polymarket recipe](https://trmnl.com/recipes/186483), each configured page becomes a separate full-screen slide after newspapers, using the shared `slide_seconds` duration (60 seconds by default), date/time, and battery footer. This is a read-only display; it never connects a wallet or places trades.
+
+Paste up to three page URLs into `config.yaml`, then restart:
+
+```yaml
+slide_order: [weather, calendar, quarter, quote, newspapers, polymarket]
+polymarket_pages:
+  - "" # Paste your first https://polymarket.com/event/... URL here.
+  - "" # Second page URL.
+  - "" # Third page URL.
+```
+
+Blank slots are skipped, so no Polymarket slides appear until you choose URLs. The server accepts `/event/event-slug`, `/event/event-slug/market-slug` for a specific market in an event, and `/market/market-slug` URLs on polymarket.com. Category, profile, and search pages are not supported. Tracking query parameters are ignored. Duplicate pages, unsupported URLs, and more than three slots are rejected at startup. Browser preview navigation gains a link for each configured page. If you already have a custom `slide_order`, add `polymarket` after `newspapers` yourself.
+
+The server fetches the public [Polymarket Gamma API](https://docs.polymarket.com/api-reference/events/get-event-by-slug) on every image request, with no API key, local data cache, or image cache. Requests have an 18-second timeout, a 4 MiB response limit, and redirects restricted to the API host. API errors produce an unavailable slide and retry on the next display rather than showing saved prices.
+
+Single-market pages show each outcome; multi-market events show the Yes price for each binary market (or each named outcome for nonbinary markets). Up to six rows fit on a screen, with a visible shown/total count. Open markets sort first, then descending outcome price. Archived markets are omitted; closed/inactive markets are labeled. Missing or invalid prices show a dash. Percentages are reported market prices, not guaranteed probabilities or a complete order-book quote; fetch time is not the time of the last trade. This version does not include price-history charts.
 
 ## Newspaper front pages
 

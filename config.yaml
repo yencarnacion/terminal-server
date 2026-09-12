@@ -1,6 +1,6 @@
 # Seconds each slide stays on the TRMNL. Restart the server after editing.
 slide_seconds: 60
-slide_order: [weather, calendar, quarter, quote, newspapers]
+slide_order: [weather, calendar, quarter, quote, newspapers, polymarket]
 
 listen: ":8177"
 base_url: "http://10.17.17.90:8177"
@@ -17,3 +17,9 @@ weather_enabled: true
 weather_location: "San Juan, PR"
 weather_latitude: 18.4655
 weather_longitude: -66.1057
+
+# Paste up to three https://polymarket.com/event/... URLs; blank slots are skipped.
+polymarket_pages:
+  - ""
+  - ""
+  - ""

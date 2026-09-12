@@ -39,6 +39,7 @@ type app struct {
 	frontpages *frontpages
 	weather    *weatherService
 	slideOrder []string
+	polymarket *polymarketService
 }
 
 func loadKey(dir string) ([]byte, error) {
@@ -129,6 +130,17 @@ func (a *app) image(id string) ([]byte, error) {
 }
 
 func (a *app) imageContext(ctx context.Context, id string) ([]byte, error) {
+	if strings.HasPrefix(id, "poly-") {
+		base, battery, err := splitBatteryID(id)
+		if err != nil || a.polymarket == nil {
+			return nil, os.ErrNotExist
+		}
+		data, err := a.polymarket.render(ctx, base, a.now().In(a.location))
+		if err != nil {
+			return nil, err
+		}
+		return addBatteryFooter(data, battery)
+	}
 	if strings.HasPrefix(id, "weather-") {
 		base, battery, err := splitBatteryID(id)
 		if err != nil || a.weather == nil {
@@ -206,7 +218,7 @@ func (a *app) imageContext(ctx context.Context, id string) ([]byte, error) {
 }
 
 func (a *app) screenID(mode string, now time.Time) (string, error) {
-	if strings.HasPrefix(mode, "cover-") {
+	if strings.HasPrefix(mode, "cover-") || strings.HasPrefix(mode, "poly-") {
 		return fmt.Sprintf("%s-%d", mode, now.UnixNano()), nil
 	}
 	if mode == "calendar" || mode == "quarter" || mode == "weather" {
@@ -234,6 +246,10 @@ func (a *app) playlist() []string {
 		case "newspapers":
 			for _, cover := range a.frontpages.snapshot() {
 				slides = append(slides, cover.ID)
+			}
+		case "polymarket":
+			for _, page := range a.polymarket.pages() {
+				slides = append(slides, page.ID)
 			}
 		}
 	}
@@ -263,7 +279,7 @@ func (a *app) nextDisplay(r *http.Request) (string, error) {
 	id, err := a.screenID(mode, a.now())
 	if err == nil {
 		id += readBattery(r.Header).suffix()
-		if !strings.HasPrefix(id, "cover-") && !strings.HasPrefix(id, "weather-") {
+		if !strings.HasPrefix(id, "cover-") && !strings.HasPrefix(id, "weather-") && !strings.HasPrefix(id, "poly-") {
 			_, err = a.image(id)
 		}
 	}
@@ -333,7 +349,7 @@ func (a *app) routes() http.Handler {
 			return
 		}
 		id := strings.TrimSuffix(name, ".png")
-		isLive := strings.HasPrefix(id, "cover-") || strings.HasPrefix(id, "weather-")
+		isLive := strings.HasPrefix(id, "cover-") || strings.HasPrefix(id, "weather-") || strings.HasPrefix(id, "poly-")
 		if isLive {
 			w.Header().Set("Cache-Control", "no-store, no-cache, max-age=0")
 			w.Header().Set("Pragma", "no-cache")
@@ -369,6 +385,12 @@ func (a *app) routes() http.Handler {
 			links += fmt.Sprintf(`<a href="/preview?screen=%s">%s</a>`, cover.ID, html.EscapeString(cover.Name))
 		}
 		isCover := false
+		for i, page := range a.polymarket.pages() {
+			links += fmt.Sprintf(`<a href="/preview?screen=%s">Polymarket %d</a>`, page.ID, i+1)
+			if mode == page.ID {
+				isCover = true
+			}
+		}
 		for _, cover := range covers {
 			if mode == cover.ID {
 				isCover = true

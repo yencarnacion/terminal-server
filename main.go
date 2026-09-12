@@ -51,6 +51,10 @@ func main() {
 	}
 	app.location = location
 	app.slideOrder = append([]string(nil), cfg.SlideOrder...)
+	app.polymarket, err = newPolymarket(cfg.PolymarketPages)
+	if err != nil {
+		log.Fatal(err)
+	}
 	if cfg.WeatherEnabled {
 		app.weather = newWeather(cfg)
 	}
