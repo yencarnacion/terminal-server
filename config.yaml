@@ -20,6 +20,6 @@ weather_longitude: -66.1057
 
 # Paste up to three https://polymarket.com/event/... URLs; blank slots are skipped.
 polymarket_pages:
-  - ""
-  - ""
-  - ""
+  - "https://polymarket.com/event/what-price-will-bitcoin-hit-before-2027"
+  - "https://polymarket.com/event/which-party-will-win-the-house-in-2026"
+  - "https://polymarket.com/event/which-party-will-win-the-senate-in-2026"

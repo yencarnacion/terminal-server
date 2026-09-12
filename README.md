@@ -107,12 +107,12 @@ Paste up to three page URLs into `config.yaml`, then restart:
 ```yaml
 slide_order: [weather, calendar, quarter, quote, newspapers, polymarket]
 polymarket_pages:
-  - "" # Paste your first https://polymarket.com/event/... URL here.
-  - "" # Second page URL.
-  - "" # Third page URL.
+  - "https://polymarket.com/event/what-price-will-bitcoin-hit-before-2027"
+  - "https://polymarket.com/event/which-party-will-win-the-house-in-2026"
+  - "https://polymarket.com/event/which-party-will-win-the-senate-in-2026"
 ```
 
-Blank slots are skipped, so no Polymarket slides appear until you choose URLs. The server accepts `/event/event-slug`, `/event/event-slug/market-slug` for a specific market in an event, and `/market/market-slug` URLs on polymarket.com. Category, profile, and search pages are not supported. Tracking query parameters are ignored. Duplicate pages, unsupported URLs, and more than three slots are rejected at startup. Browser preview navigation gains a link for each configured page. If you already have a custom `slide_order`, add `polymarket` after `newspapers` yourself.
+The initial pages are Bitcoin, House, and Senate, in that order. Replace these URLs to choose different pages; blank slots are skipped. The server accepts `/event/event-slug`, `/event/event-slug/market-slug` for a specific market in an event, and `/market/market-slug` URLs on polymarket.com. Category, profile, and search pages are not supported. Tracking query parameters are ignored. Duplicate pages, unsupported URLs, and more than three slots are rejected at startup. Browser preview navigation gains a link for each configured page. If you already have a custom `slide_order`, add `polymarket` after `newspapers` yourself.
 
 The server fetches the public [Polymarket Gamma API](https://docs.polymarket.com/api-reference/events/get-event-by-slug) on every image request, with no API key, local data cache, or image cache. Requests have an 18-second timeout, a 4 MiB response limit, and redirects restricted to the API host. API errors produce an unavailable slide and retry on the next display rather than showing saved prices.
 
