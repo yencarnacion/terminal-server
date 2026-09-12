@@ -1,5 +1,5 @@
 # Seconds each slide stays on the TRMNL. Restart the server after editing.
-slide_seconds: 120
+slide_seconds: 60
 slide_order: [weather, calendar, quarter, quote, newspapers]
 
 listen: ":8177"

@@ -1,10 +1,10 @@
 # Terminal Server
 
-A small Go BYOS server for **TRMNL X**, showing random cowsay fortunes, a month calendar, quarter progress, San Juan weather, and newspaper front pages, **two minutes per slide** by default. It renders native **1872 × 1404, 4-bit indexed grayscale PNGs** with embedded fonts. No browser, ImageMagick, database, `fortune`, or `cowsay` installation is needed.
+A small Go BYOS server for **TRMNL X**, showing random cowsay fortunes, a month calendar, quarter progress, San Juan weather, and newspaper front pages, **one minute per slide** by default. It renders native **1872 × 1404, 4-bit indexed grayscale PNGs** with embedded fonts. No browser, ImageMagick, database, `fortune`, or `cowsay` installation is needed.
 
 The binary includes the 255 quotes from the original `custom_fortunes/my_quotes.txt`. Fortune image URLs stay tied to the exact quote. The calendar takes its inspiration from a paper wall calendar: a bold month/year band, Sunday-first ruled grid, adjacent-month references, a prominent full date, today's cell highlighted in black, and a large time display.
 
-Calendar dates and times default to **America/New_York**, including daylight-saving changes. Override with `--timezone Europe/London` or another IANA zone. Timezone data is embedded, so the server does not depend on the host's timezone database. The displayed clock is **time at refresh**, not a continuously ticking clock. With two newspaper covers and the default interval, the six-slide cycle takes 12 minutes, so the calendar normally gets a fresh timestamp every 12 minutes.
+Calendar dates and times default to **America/New_York**, including daylight-saving changes. Override with `--timezone Europe/London` or another IANA zone. Timezone data is embedded, so the server does not depend on the host's timezone database. The displayed clock is **time at refresh**, not a continuously ticking clock. With two newspaper covers and the default interval, the six-slide cycle takes 6 minutes, so the calendar normally gets a fresh timestamp every 6 minutes.
 
 Every device screen has a small bottom-center battery icon and percentage. It adds “Charging” when the device reports charging, or “Power connected” when USB power is reported without charging. At 20% or lower while off external power, the indicator turns black and adds “LOW”; otherwise it uses a quieter gray. Readings update at screen refresh, just like the clock.
 
@@ -24,7 +24,7 @@ go build -o bin/terminal-server .
 
 Open **http://10.17.17.90:8177/preview** for an automatically refreshing browser slideshow. Use **Calendar** or **Fortune** to preview either screen directly, or open `/preview?screen=calendar` and `/preview?screen=cowsay`. Browser previews never advance the device's playlist.
 
-The default is `--screen slideshow --refresh 120`. Each successful device display request advances weather → calendar → quarter progress → fortune → each available newspaper cover → weather, independently per device. A center touchbar tap also advances the slideshow. Restarting the server starts the device sequence at the first available configured slide. Use `--screen cowsay`, `--screen calendar`, or `--screen quarter` to show just one screen, and `--refresh` to change seconds per screen. Browser slideshow selection uses wall-clock slots and may be on a different slide from the device. Calendar image URLs preserve the scheduled minute even when downloaded after midnight.
+The default is `--screen slideshow --refresh 60`. Each successful device display request advances weather → calendar → quarter progress → fortune → each available newspaper cover → weather, independently per device. A center touchbar tap also advances the slideshow. Restarting the server starts the device sequence at the first available configured slide. Use `--screen cowsay`, `--screen calendar`, or `--screen quarter` to show just one screen, and `--refresh` to change seconds per screen. Browser slideshow selection uses wall-clock slots and may be on a different slide from the device. Calendar image URLs preserve the scheduled minute even when downloaded after midnight.
 
 ## Configuration
 
@@ -39,7 +39,7 @@ Reorder entries or omit screens you do not want, then restart the server. `quote
 The server reads **`config.yaml`** from its working directory at startup. To change the time between slides, edit:
 
 ```yaml
-slide_seconds: 300 # Five minutes per slide; default 120 (two minutes).
+slide_seconds: 300 # Five minutes per slide; default 60 (one minute).
 ```
 
 Restart the server after changing the file. **No rebuild is needed for configuration edits.** The TRMNL learns the new interval on its next request; tap the center touchbar to apply it sooner. This value sets the duration of every slide and the browser preview refresh interval. The minimum is 60 seconds.
@@ -47,7 +47,7 @@ Restart the server after changing the file. **No rebuild is needed for configura
 The shipped `config.yaml` includes these general settings (weather settings are documented below):
 
 ```yaml
-slide_seconds: 120
+slide_seconds: 60
 listen: ":8177"
 base_url: "http://10.17.17.90:8177"
 screen: slideshow
@@ -98,7 +98,7 @@ Forecast data is shared in memory for 15 minutes to respect NWS rate limits; ren
 
 ## Newspaper front pages
 
-By default the server discovers newspapers from **http://10.17.17.90:8100/api/newspapers**, then fetches each paper's `/api/newspapers/{id}/today` metadata and its `image_url`. Currently the service provides **The New York Times** and **El Nuevo Día**, giving a six-slide cycle with 120 seconds for each slide by default. Additional papers appear automatically in service catalog order.
+By default the server discovers newspapers from **http://10.17.17.90:8100/api/newspapers**, then fetches each paper's `/api/newspapers/{id}/today` metadata and its `image_url`. Currently the service provides **The New York Times** and **El Nuevo Día**, giving a six-slide cycle with 60 seconds for each slide by default. Additional papers appear automatically in service catalog order.
 
 Set `--frontpages-url http://host:port` to change the source, or `--frontpages-url ''` to disable newspaper slides. The source is your [frontpages service](https://github.com/yencarnacion/frontpages); no API key is needed in Terminal Server. Fetching `/today` may trigger the source service's normal scrape/cache behavior. Terminal Server does not call admin or force-refresh endpoints.
 
