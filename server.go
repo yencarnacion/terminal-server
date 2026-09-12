@@ -37,6 +37,7 @@ type app struct {
 	playMu     sync.Mutex
 	next       map[string]int
 	frontpages *frontpages
+	weather    *weatherService
 }
 
 func loadKey(dir string) ([]byte, error) {
@@ -71,7 +72,7 @@ func loadKey(dir string) ([]byte, error) {
 }
 
 func newApp(base string, refresh int, screenName string, quotes []string, key []byte) (*app, error) {
-	if screenName != "cowsay" && screenName != "calendar" && screenName != "quarter" && screenName != "slideshow" {
+	if screenName != "cowsay" && screenName != "calendar" && screenName != "quarter" && screenName != "slideshow" && screenName != "weather" {
 		return nil, fmt.Errorf("unknown screen %q", screenName)
 	}
 	location, err := time.LoadLocation("America/New_York")
@@ -127,6 +128,20 @@ func (a *app) image(id string) ([]byte, error) {
 }
 
 func (a *app) imageContext(ctx context.Context, id string) ([]byte, error) {
+	if strings.HasPrefix(id, "weather-") {
+		base, battery, err := splitBatteryID(id)
+		if err != nil || a.weather == nil {
+			return nil, os.ErrNotExist
+		}
+		if _, err := time.Parse("20060102T1504Z", strings.TrimPrefix(base, "weather-")); err != nil {
+			return nil, os.ErrNotExist
+		}
+		data, err := a.weather.render(ctx, a.now())
+		if err != nil {
+			return nil, err
+		}
+		return addBatteryFooter(data, battery)
+	}
 	// Newspaper images bypass the rendered-image cache entirely.
 	if strings.HasPrefix(id, "cover-") {
 		base, battery, err := splitBatteryID(id)
@@ -193,7 +208,7 @@ func (a *app) screenID(mode string, now time.Time) (string, error) {
 	if strings.HasPrefix(mode, "cover-") {
 		return fmt.Sprintf("%s-%d", mode, now.UnixNano()), nil
 	}
-	if mode == "calendar" || mode == "quarter" {
+	if mode == "calendar" || mode == "quarter" || mode == "weather" {
 		return mode + "-" + now.UTC().Format("20060102T1504Z"), nil
 	}
 	return a.randomID()
@@ -201,6 +216,9 @@ func (a *app) screenID(mode string, now time.Time) (string, error) {
 
 func (a *app) playlist() []string {
 	slides := []string{"cowsay", "calendar", "quarter"}
+	if a.weather != nil {
+		slides = append(slides, "weather")
+	}
 	for _, cover := range a.frontpages.snapshot() {
 		slides = append(slides, cover.ID)
 	}
@@ -226,7 +244,7 @@ func (a *app) nextDisplay(r *http.Request) (string, error) {
 	id, err := a.screenID(mode, a.now())
 	if err == nil {
 		id += readBattery(r.Header).suffix()
-		if !strings.HasPrefix(id, "cover-") {
+		if !strings.HasPrefix(id, "cover-") && !strings.HasPrefix(id, "weather-") {
 			_, err = a.image(id)
 		}
 	}
@@ -296,8 +314,8 @@ func (a *app) routes() http.Handler {
 			return
 		}
 		id := strings.TrimSuffix(name, ".png")
-		isCover := strings.HasPrefix(id, "cover-")
-		if isCover {
+		isLive := strings.HasPrefix(id, "cover-") || strings.HasPrefix(id, "weather-")
+		if isLive {
 			w.Header().Set("Cache-Control", "no-store, no-cache, max-age=0")
 			w.Header().Set("Pragma", "no-cache")
 		}
@@ -313,7 +331,7 @@ func (a *app) routes() http.Handler {
 		}
 		w.Header().Set("Content-Type", "image/png")
 		w.Header().Set("Content-Length", fmt.Sprint(len(data)))
-		if !isCover {
+		if !isLive {
 			w.Header().Set("Cache-Control", "public, max-age=3600")
 		}
 		_, _ = w.Write(data)
@@ -325,6 +343,9 @@ func (a *app) routes() http.Handler {
 		}
 		covers := a.frontpages.snapshot()
 		links := ""
+		if a.weather != nil {
+			links += `<a href="/preview?screen=weather">Weather</a>`
+		}
 		for _, cover := range covers {
 			links += fmt.Sprintf(`<a href="/preview?screen=%s">%s</a>`, cover.ID, html.EscapeString(cover.Name))
 		}
@@ -334,16 +355,13 @@ func (a *app) routes() http.Handler {
 				isCover = true
 			}
 		}
-		if mode != "slideshow" && mode != "calendar" && mode != "quarter" && mode != "cowsay" && !isCover {
+		if mode != "slideshow" && mode != "calendar" && mode != "quarter" && mode != "cowsay" && !(mode == "weather" && a.weather != nil) && !isCover {
 			http.Error(w, "unknown screen", 400)
 			return
 		}
 		now := a.now()
 		if mode == "slideshow" {
-			playlist := []string{"cowsay", "calendar", "quarter"}
-			for _, cover := range covers {
-				playlist = append(playlist, cover.ID)
-			}
+			playlist := a.playlist()
 			mode = playlist[now.Unix()/int64(a.refresh)%int64(len(playlist))]
 		}
 		id, err := a.screenID(mode, now)

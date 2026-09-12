@@ -50,6 +50,9 @@ func main() {
 		log.Fatal(err)
 	}
 	app.location = location
+	if cfg.WeatherEnabled {
+		app.weather = newWeather(cfg)
+	}
 	if cfg.FrontpagesURL != "" {
 		app.frontpages, err = newFrontpages(cfg.FrontpagesURL)
 		if err != nil {

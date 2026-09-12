@@ -3,7 +3,7 @@ slide_seconds: 120
 
 listen: ":8177"
 base_url: "http://10.17.17.90:8177"
-screen: slideshow # slideshow, cowsay, calendar, or quarter
+screen: slideshow # slideshow, cowsay, calendar, quarter, or weather
 timezone: America/New_York
 
 # Empty quotes_file uses the quotes bundled into the binary.
@@ -12,3 +12,7 @@ data_dir: ./data
 
 # Empty frontpages_url disables newspaper slides. Covers are never cached.
 frontpages_url: "http://10.17.17.90:8100"
+weather_enabled: true
+weather_location: "San Juan, PR"
+weather_latitude: 18.4655
+weather_longitude: -66.1057

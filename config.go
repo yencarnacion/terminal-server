@@ -16,18 +16,22 @@ import (
 )
 
 type configuration struct {
-	Listen        string `yaml:"listen"`
-	BaseURL       string `yaml:"base_url"`
-	SlideSeconds  int    `yaml:"slide_seconds"`
-	Screen        string `yaml:"screen"`
-	Timezone      string `yaml:"timezone"`
-	QuotesFile    string `yaml:"quotes_file"`
-	DataDir       string `yaml:"data_dir"`
-	FrontpagesURL string `yaml:"frontpages_url"`
+	Listen           string  `yaml:"listen"`
+	BaseURL          string  `yaml:"base_url"`
+	SlideSeconds     int     `yaml:"slide_seconds"`
+	Screen           string  `yaml:"screen"`
+	Timezone         string  `yaml:"timezone"`
+	QuotesFile       string  `yaml:"quotes_file"`
+	DataDir          string  `yaml:"data_dir"`
+	FrontpagesURL    string  `yaml:"frontpages_url"`
+	WeatherEnabled   bool    `yaml:"weather_enabled"`
+	WeatherLocation  string  `yaml:"weather_location"`
+	WeatherLatitude  float64 `yaml:"weather_latitude"`
+	WeatherLongitude float64 `yaml:"weather_longitude"`
 }
 
 func defaultConfiguration() configuration {
-	return configuration{Listen: ":8177", BaseURL: "http://10.17.17.90:8177", SlideSeconds: 120, Screen: "slideshow", Timezone: "America/New_York", DataDir: "./data", FrontpagesURL: "http://10.17.17.90:8100"}
+	return configuration{Listen: ":8177", BaseURL: "http://10.17.17.90:8177", SlideSeconds: 120, Screen: "slideshow", Timezone: "America/New_York", DataDir: "./data", FrontpagesURL: "http://10.17.17.90:8100", WeatherEnabled: true, WeatherLocation: "San Juan, PR", WeatherLatitude: 18.4655, WeatherLongitude: -66.1057}
 }
 
 // Precedence: built-in defaults < YAML values < explicitly supplied CLI flags.
@@ -41,7 +45,7 @@ func readConfiguration(args []string, output io.Writer) (configuration, error) {
 	fs.StringVar(&cli.Listen, "listen", cli.Listen, "HTTP bind address")
 	fs.StringVar(&cli.BaseURL, "base-url", cli.BaseURL, "URL reachable by the device")
 	fs.IntVar(&cli.SlideSeconds, "refresh", cli.SlideSeconds, "seconds each slideshow screen is displayed")
-	fs.StringVar(&cli.Screen, "screen", cli.Screen, "slideshow, cowsay, calendar, or quarter")
+	fs.StringVar(&cli.Screen, "screen", cli.Screen, "slideshow, cowsay, calendar, quarter, or weather")
 	fs.StringVar(&cli.Timezone, "timezone", cli.Timezone, "IANA timezone")
 	fs.StringVar(&cli.QuotesFile, "quotes", cli.QuotesFile, "fortune-format file; empty uses bundled quotes")
 	fs.StringVar(&cli.DataDir, "data-dir", cli.DataDir, "persistent device key directory")
@@ -110,8 +114,14 @@ func (c configuration) validate() error {
 	if c.FrontpagesURL != "" && !validOrigin(c.FrontpagesURL) {
 		return fmt.Errorf("frontpages_url / --frontpages-url must be an absolute HTTP(S) origin or empty")
 	}
-	if c.Screen != "slideshow" && c.Screen != "cowsay" && c.Screen != "calendar" && c.Screen != "quarter" {
+	if c.Screen != "slideshow" && c.Screen != "cowsay" && c.Screen != "calendar" && c.Screen != "quarter" && c.Screen != "weather" {
 		return fmt.Errorf("unknown screen %q", c.Screen)
+	}
+	if c.WeatherEnabled && (!(c.WeatherLatitude >= -90 && c.WeatherLatitude <= 90) || !(c.WeatherLongitude >= -180 && c.WeatherLongitude <= 180) || strings.TrimSpace(c.WeatherLocation) == "" || len(c.WeatherLocation) > 60) {
+		return fmt.Errorf("weather requires valid coordinates and a location name of 1–60 bytes")
+	}
+	if c.Screen == "weather" && !c.WeatherEnabled {
+		return fmt.Errorf("weather screen requires weather_enabled")
 	}
 	if c.Timezone == "" {
 		return fmt.Errorf("timezone must not be empty")

@@ -1,10 +1,10 @@
 # Terminal Server
 
-A small Go BYOS server for **TRMNL X**, showing random cowsay fortunes, a month calendar, quarter progress, and newspaper front pages, **two minutes per slide** by default. It renders native **1872 × 1404, 4-bit indexed grayscale PNGs** with embedded fonts. No browser, ImageMagick, database, `fortune`, or `cowsay` installation is needed.
+A small Go BYOS server for **TRMNL X**, showing random cowsay fortunes, a month calendar, quarter progress, San Juan weather, and newspaper front pages, **two minutes per slide** by default. It renders native **1872 × 1404, 4-bit indexed grayscale PNGs** with embedded fonts. No browser, ImageMagick, database, `fortune`, or `cowsay` installation is needed.
 
 The binary includes the 255 quotes from the original `custom_fortunes/my_quotes.txt`. Fortune image URLs stay tied to the exact quote. The calendar takes its inspiration from a paper wall calendar: a bold month/year band, Sunday-first ruled grid, adjacent-month references, a prominent full date, today's cell highlighted in black, and a large time display.
 
-Calendar dates and times default to **America/New_York**, including daylight-saving changes. Override with `--timezone Europe/London` or another IANA zone. Timezone data is embedded, so the server does not depend on the host's timezone database. The displayed clock is **time at refresh**, not a continuously ticking clock. With two newspaper covers and the default interval, the five-slide cycle takes 10 minutes, so the calendar normally gets a fresh timestamp every 10 minutes.
+Calendar dates and times default to **America/New_York**, including daylight-saving changes. Override with `--timezone Europe/London` or another IANA zone. Timezone data is embedded, so the server does not depend on the host's timezone database. The displayed clock is **time at refresh**, not a continuously ticking clock. With two newspaper covers and the default interval, the six-slide cycle takes 12 minutes, so the calendar normally gets a fresh timestamp every 12 minutes.
 
 Every device screen has a small bottom-center battery icon and percentage. It adds “Charging” when the device reports charging, or “Power connected” when USB power is reported without charging. At 20% or lower while off external power, the indicator turns black and adds “LOW”; otherwise it uses a quieter gray. Readings update at screen refresh, just like the clock.
 
@@ -24,7 +24,7 @@ go build -o bin/terminal-server .
 
 Open **http://10.17.17.90:8177/preview** for an automatically refreshing browser slideshow. Use **Calendar** or **Fortune** to preview either screen directly, or open `/preview?screen=calendar` and `/preview?screen=cowsay`. Browser previews never advance the device's playlist.
 
-The default is `--screen slideshow --refresh 120`. Each successful device display request advances fortune → calendar → quarter progress → each available newspaper cover → fortune, independently per device. A center touchbar tap also advances the slideshow. Restarting the server starts the device sequence at fortune again. Use `--screen cowsay`, `--screen calendar`, or `--screen quarter` to show just one screen, and `--refresh` to change seconds per screen. Browser slideshow selection uses wall-clock slots and may be on a different slide from the device. Calendar image URLs preserve the scheduled minute even when downloaded after midnight.
+The default is `--screen slideshow --refresh 120`. Each successful device display request advances fortune → calendar → quarter progress → weather → each available newspaper cover → fortune, independently per device. A center touchbar tap also advances the slideshow. Restarting the server starts the device sequence at fortune again. Use `--screen cowsay`, `--screen calendar`, or `--screen quarter` to show just one screen, and `--refresh` to change seconds per screen. Browser slideshow selection uses wall-clock slots and may be on a different slide from the device. Calendar image URLs preserve the scheduled minute even when downloaded after midnight.
 
 ## Configuration
 
@@ -36,7 +36,7 @@ slide_seconds: 300 # Five minutes per slide; default 120 (two minutes).
 
 Restart the server after changing the file. **No rebuild is needed for configuration edits.** The TRMNL learns the new interval on its next request; tap the center touchbar to apply it sooner. This value sets the duration of every slide and the browser preview refresh interval. The minimum is 60 seconds.
 
-The shipped `config.yaml` includes all current startup settings:
+The shipped `config.yaml` includes these general settings (weather settings are documented below):
 
 ```yaml
 slide_seconds: 120
@@ -49,7 +49,7 @@ data_dir: ./data
 frontpages_url: "http://10.17.17.90:8100"
 ```
 
-`screen` accepts `slideshow`, `cowsay`, `calendar`, or `quarter`. Empty `quotes_file` uses bundled quotes; empty `frontpages_url` disables newspapers. Cover images are still fetched live and never cached.
+`screen` accepts `slideshow`, `cowsay`, `calendar`, `quarter`, or `weather`. Empty `quotes_file` uses bundled quotes; empty `frontpages_url` disables newspapers. Cover images are still fetched live and never cached.
 
 Settings precedence is **built-in defaults → YAML → explicitly supplied CLI flags**. Existing flags continue working, so `--refresh 180` overrides `slide_seconds` in the file. Remove explicit flags from your service/launch command for settings you want to control through YAML.
 
@@ -59,7 +59,7 @@ Settings precedence is **built-in defaults → YAML → explicitly supplied CLI 
 ./bin/terminal-server --config '' # Ignore YAML; use defaults and CLI flags.
 ```
 
-An absent default `config.yaml` preserves the old built-in defaults. An explicitly requested missing config, invalid YAML, duplicate/unknown keys, unsupported settings, or multiple YAML documents fails at startup with an error. Relative file paths (including `quotes_file` and `data_dir`) remain relative to the server's working directory, not the YAML file's directory. Keep `data_dir` pointing to the existing device key when changing configuration. Startup logs show the effective interval and timezone.
+An absent default `config.yaml` uses the built-in defaults. An explicitly requested missing config, invalid YAML, duplicate/unknown keys, unsupported settings, or multiple YAML documents fails at startup with an error. Relative file paths (including `quotes_file` and `data_dir`) remain relative to the server's working directory, not the YAML file's directory. Keep `data_dir` pointing to the existing device key when changing configuration. Startup logs show the effective interval and timezone.
 
 ## Quarter progress
 
@@ -69,15 +69,34 @@ Completed local dates are filled dark, today is outlined with its date number, a
 
 Preview with `/preview?screen=quarter`, or run only this screen using `--screen quarter`. Like the calendar, it reflects the timestamp of its last refresh and includes the shared battery footer.
 
+## San Juan weather
+
+Weather appears after quarter progress, before newspaper covers. Inspired by the [Daily Weather recipe](https://trmnl.com/recipes/150460), it shows the full date, Puerto Rico local time (AST year-round), a large **forecast** temperature in Fahrenheit, rain chance, wind in mph, a short outlook, and five daily high/night-low cards. The battery footer remains visible. This is a forecast, not a live thermometer or emergency alert system.
+
+Data comes directly from the free, public [NOAA/NWS API](https://www.weather.gov/documentation/services-web-api), using the San Juan forecast office's grid forecasts. No API key or subscription is needed. The server resolves coordinates via `/points`, then requests the returned forecast URL with `units=us`. It identifies itself with a User-Agent and checks all URLs/redirects stay on api.weather.gov. It does not scrape the weather.gov website. UV index is omitted because this NWS forecast endpoint does not supply it.
+
+These additional `config.yaml` settings default to San Juan:
+
+```yaml
+weather_enabled: true
+weather_location: "San Juan, PR"
+weather_latitude: 18.4655
+weather_longitude: -66.1057
+```
+
+Restart after editing. Changing the name alone does not change the forecast; coordinates select the NWS grid. Weather dates always use `America/Puerto_Rico`, independently of the calendar timezone. Set `weather_enabled: false` to remove it, or `screen: weather` for weather only. Preview at `/preview?screen=weather`.
+
+Forecast data is shared in memory for 15 minutes to respect NWS rate limits; rendered weather images are not cached. Newspaper covers remain completely uncached. Each weather image shows its render time and NWS issue time. On fetch failure, the slide displays an unavailable message and retries after two minutes, without interrupting other slides or silently using stale data. Forecasts issued over 24 hours ago are rejected. Missing values show a dash, not zero. Today's high disappears after its forecast period ends; night lows belong to the evening when that period starts. Daily rain chance is the maximum of the remaining day/night period probabilities, not a calculated whole-day probability.
+
 ## Newspaper front pages
 
-By default the server discovers newspapers from **http://10.17.17.90:8100/api/newspapers**, then fetches each paper's `/api/newspapers/{id}/today` metadata and its `image_url`. Currently the service provides **The New York Times** and **El Nuevo Día**, giving a five-slide cycle with 120 seconds for each slide by default. Additional papers appear automatically in service catalog order.
+By default the server discovers newspapers from **http://10.17.17.90:8100/api/newspapers**, then fetches each paper's `/api/newspapers/{id}/today` metadata and its `image_url`. Currently the service provides **The New York Times** and **El Nuevo Día**, giving a six-slide cycle with 120 seconds for each slide by default. Additional papers appear automatically in service catalog order.
 
 Set `--frontpages-url http://host:port` to change the source, or `--frontpages-url ''` to disable newspaper slides. The source is your [frontpages service](https://github.com/yencarnacion/frontpages); no API key is needed in Terminal Server. Fetching `/today` may trigger the source service's normal scrape/cache behavior. Terminal Server does not call admin or force-refresh endpoints.
 
 **Newspaper covers are never cached by Terminal Server.** Every cover-image request calls that paper's `/today` endpoint on port 8100, downloads the returned `image_url`, and renders it afresh. The cover is not retained on disk or in the rendered-image cache. Upstream requests send no-cache headers; downstream PNG responses send `Cache-Control: no-store, no-cache, max-age=0`. Every scheduled cover also has a unique timestamped filename to prevent the TRMNL from reusing yesterday's image. Even a repeated request to an old cover URL fetches `/today` again. Port 8100 remains responsible for obtaining the day's source edition; Terminal Server displays its reported **edition date** rather than assuming it matches today's date.
 
-Only the list of configured newspaper names/IDs is kept and refreshed every 15 minutes. Until the first catalog response, fortune, calendar, and quarter progress continue alone. Removed papers disappear on the next successful catalog refresh. If a cover fetch fails, the image request fails rather than serving a saved edition. Fortune, calendar, and quarter progress remain available. A catalog outage preserves the newspaper list, not any cover images.
+Only the list of configured newspaper names/IDs is kept and refreshed every 15 minutes. Until the first catalog response, fortune, calendar, quarter progress, and weather continue. Removed papers disappear on the next successful catalog refresh. If a cover fetch fails, the image request fails rather than serving a saved edition. Fortune, calendar, and quarter progress remain available. A catalog outage preserves the newspaper list, not any cover images.
 
 Each cover gets its own full-screen grayscale slide and the shared battery footer. **The New York Times** (`ny_nyt-The_New_York_Times`) is cropped to the **upper-right quadrant** of its source spread and enlarged proportionally, showing the masthead and top stories like a folded newspaper at a newsstand. **El Nuevo Día and other papers remain uncropped**, fitted proportionally. Source resolution limits readability; the server cannot add detail missing from a small source image. The current El Nuevo Día image is 468 × 492 pixels. Network timeouts, response-size limits, and an image-pixel limit bound failures. Cover URLs and redirects must stay on the configured frontpages origin.
 
