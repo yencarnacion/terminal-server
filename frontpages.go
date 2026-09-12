@@ -142,7 +142,7 @@ func (f *frontpages) render(ctx context.Context, id string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return renderCover(raw, paper.Name, meta.Date)
+	return renderCover(raw, paper.PaperID, paper.Name, meta.Date)
 }
 
 func (f *frontpages) refresh(ctx context.Context) error {
@@ -193,7 +193,16 @@ func (f *frontpages) run(ctx context.Context) {
 	}
 }
 
-func renderCover(raw []byte, name, date string) ([]byte, error) {
+func coverSourceRect(bounds image.Rectangle, paperID string) image.Rectangle {
+	if paperID == "ny_nyt-The_New_York_Times" {
+		// The NYT source is a spread: show its upper-right quadrant like
+		// a folded newspaper on a newsstand, enlarging masthead/headlines.
+		return image.Rect(bounds.Min.X+bounds.Dx()/2, bounds.Min.Y, bounds.Max.X, bounds.Min.Y+bounds.Dy()/2)
+	}
+	return bounds
+}
+
+func renderCover(raw []byte, paperID, name, date string) ([]byte, error) {
 	config, _, err := image.DecodeConfig(bytes.NewReader(raw))
 	if err != nil {
 		return nil, err
@@ -205,13 +214,17 @@ func renderCover(raw []byte, name, date string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	sourceRect := coverSourceRect(source.Bounds(), paperID)
+	if sourceRect.Empty() {
+		return nil, fmt.Errorf("cover crop is empty")
+	}
 	img := image.NewGray(image.Rect(0, 0, width, height))
 	draw.Draw(img, img.Bounds(), image.White, image.Point{}, draw.Src)
 	const top, bottom = 108, height - 88
-	scale := math.Min(float64(width-108)/float64(config.Width), float64(bottom-top)/float64(config.Height))
-	w, h := int(float64(config.Width)*scale), int(float64(config.Height)*scale)
+	scale := math.Min(float64(width-108)/float64(sourceRect.Dx()), float64(bottom-top)/float64(sourceRect.Dy()))
+	w, h := int(float64(sourceRect.Dx())*scale), int(float64(sourceRect.Dy())*scale)
 	x, y := (width-w)/2, top+(bottom-top-h)/2
-	xdraw.CatmullRom.Scale(img, image.Rect(x, y, x+w, y+h), source, source.Bounds(), draw.Over, nil)
+	xdraw.CatmullRom.Scale(img, image.Rect(x, y, x+w, y+h), source, sourceRect, draw.Over, nil)
 	tf, err := opentype.Parse(goregular.TTF)
 	if err != nil {
 		return nil, err

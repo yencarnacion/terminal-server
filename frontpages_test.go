@@ -179,7 +179,7 @@ func TestFrontpagesBoundaries(t *testing.T) {
 	if _, err = f.get(context.Background(), "http://elsewhere.invalid/cover.png", 100); err == nil {
 		t.Fatal("cross-origin URL accepted")
 	}
-	if _, err = renderCover([]byte("not an image"), "Paper", "2026-09-12"); err == nil {
+	if _, err = renderCover([]byte("not an image"), "paper", "Paper", "2026-09-12"); err == nil {
 		t.Fatal("invalid image accepted")
 	}
 	var absent *frontpages
@@ -188,5 +188,55 @@ func TestFrontpagesBoundaries(t *testing.T) {
 	}
 	if _, err = f.render(context.Background(), "cover-unknown"); err == nil {
 		t.Fatal("unknown paper accepted")
+	}
+}
+
+func TestNYTNewsstandCrop(t *testing.T) {
+	const nyt = "ny_nyt-The_New_York_Times"
+	bounds := image.Rect(10, 20, 91, 141)
+	if got := coverSourceRect(bounds, nyt); got != image.Rect(50, 20, 91, 80) {
+		t.Fatal(got)
+	}
+	if got := coverSourceRect(bounds, "pr_end-El_Nuevo_Dia"); got != bounds {
+		t.Fatal("El Nuevo Día was cropped", got)
+	}
+	fixture := image.NewGray(image.Rect(0, 0, 80, 120))
+	for y := 0; y < 120; y++ {
+		for x := 0; x < 80; x++ {
+			v := uint8(34)
+			if x >= 40 {
+				v = 85
+			}
+			if y >= 60 {
+				v += 102
+			}
+			fixture.SetGray(x, y, color.Gray{Y: v})
+		}
+	}
+	var raw bytes.Buffer
+	if err := png.Encode(&raw, fixture); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		id     string
+		values []uint32
+	}{
+		{nyt, []uint32{85, 85, 85, 85}},
+		{"pr_end-El_Nuevo_Dia", []uint32{34, 85, 136, 187}},
+	} {
+		data, err := renderCover(raw.Bytes(), tc.id, "Paper", "2026-09-12")
+		if err != nil {
+			t.Fatal(err)
+		}
+		img, err := png.Decode(bytes.NewReader(data))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i, p := range []image.Point{{700, 400}, {1100, 400}, {700, 1000}, {1100, 1000}} {
+			r, _, _, _ := img.At(p.X, p.Y).RGBA()
+			if r != tc.values[i]*257 {
+				t.Fatalf("%s point %v = %d", tc.id, p, r)
+			}
+		}
 	}
 }
