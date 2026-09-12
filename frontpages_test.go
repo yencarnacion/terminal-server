@@ -200,6 +200,11 @@ func TestNYTNewsstandCrop(t *testing.T) {
 	if got := coverSourceRect(bounds, "pr_end-El_Nuevo_Dia"); got != bounds {
 		t.Fatal("El Nuevo Día was cropped", got)
 	}
+	for _, id := range []string{"wsj-The_Wall_Street_Journal", "ca_sfc-San_Francisco_Chronicle"} {
+		if got := coverSourceRect(bounds, id); got != image.Rect(10, 20, 91, 80) {
+			t.Fatalf("%s upper-half crop: %v", id, got)
+		}
+	}
 	fixture := image.NewGray(image.Rect(0, 0, 80, 120))
 	for y := 0; y < 120; y++ {
 		for x := 0; x < 80; x++ {
@@ -222,6 +227,8 @@ func TestNYTNewsstandCrop(t *testing.T) {
 		values []uint32
 	}{
 		{nyt, []uint32{85, 85, 85, 85}},
+		{"wsj-The_Wall_Street_Journal", []uint32{34, 85, 34, 85}},
+		{"ca_sfc-San_Francisco_Chronicle", []uint32{34, 85, 34, 85}},
 		{"pr_end-El_Nuevo_Dia", []uint32{34, 85, 136, 187}},
 	} {
 		data, err := renderCover(raw.Bytes(), tc.id, "Paper", "2026-09-12")

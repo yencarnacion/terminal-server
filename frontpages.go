@@ -199,6 +199,10 @@ func coverSourceRect(bounds image.Rectangle, paperID string) image.Rectangle {
 		// a folded newspaper on a newsstand, enlarging masthead/headlines.
 		return image.Rect(bounds.Min.X+bounds.Dx()/2, bounds.Min.Y, bounds.Max.X, bounds.Min.Y+bounds.Dy()/2)
 	}
+	if paperID == "wsj-The_Wall_Street_Journal" || paperID == "ca_sfc-San_Francisco_Chronicle" {
+		// Enlarge the masthead and lead stories, preserving the full page width.
+		return image.Rect(bounds.Min.X, bounds.Min.Y, bounds.Max.X, bounds.Min.Y+bounds.Dy()/2)
+	}
 	return bounds
 }
 
