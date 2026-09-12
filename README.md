@@ -1,10 +1,10 @@
 # Terminal Server
 
-A small Go BYOS server for **TRMNL X**, alternating random cowsay fortunes and a month calendar **every three minutes**. It renders native **1872 × 1404, 4-bit indexed grayscale PNGs** with embedded fonts. No browser, ImageMagick, database, `fortune`, or `cowsay` installation is needed.
+A small Go BYOS server for **TRMNL X**, showing random cowsay fortunes, a month calendar, and newspaper front pages, **three minutes per slide**. It renders native **1872 × 1404, 4-bit indexed grayscale PNGs** with embedded fonts. No browser, ImageMagick, database, `fortune`, or `cowsay` installation is needed.
 
 The binary includes the 255 quotes from the original `custom_fortunes/my_quotes.txt`. Fortune image URLs stay tied to the exact quote. The calendar takes its inspiration from a paper wall calendar: a bold month/year band, Sunday-first ruled grid, adjacent-month references, a prominent full date, today's cell highlighted in black, and a large time display.
 
-Calendar dates and times default to **America/New_York**, including daylight-saving changes. Override with `--timezone Europe/London` or another IANA zone. Timezone data is embedded, so the server does not depend on the host's timezone database. The displayed clock is **time at refresh**, not a continuously ticking clock: calendar and fortune each stay visible for 180 seconds, and the calendar normally gets a fresh timestamp every six minutes.
+Calendar dates and times default to **America/New_York**, including daylight-saving changes. Override with `--timezone Europe/London` or another IANA zone. Timezone data is embedded, so the server does not depend on the host's timezone database. The displayed clock is **time at refresh**, not a continuously ticking clock. With two newspaper covers, the four-slide cycle takes 12 minutes, so the calendar normally gets a fresh timestamp every 12 minutes.
 
 Every device screen has a small bottom-center battery icon and percentage. It adds “Charging” when the device reports charging, or “Power connected” when USB power is reported without charging. At 20% or lower while off external power, the indicator turns black and adds “LOW”; otherwise it uses a quieter gray. Readings update at screen refresh, just like the clock.
 
@@ -27,7 +27,21 @@ go build -o bin/terminal-server .
 
 Open **http://10.17.17.90:8177/preview** for an automatically refreshing browser slideshow. Use **Calendar** or **Fortune** to preview either screen directly, or open `/preview?screen=calendar` and `/preview?screen=cowsay`. Browser previews never advance the device's playlist.
 
-The default is `--screen slideshow --refresh 180`. Each successful device display request alternates fortune → calendar → fortune, independently per device. A center touchbar tap also advances the slideshow. Restarting the server starts the device sequence at fortune again. Use `--screen cowsay` or `--screen calendar` to show just one screen, and `--refresh` to change seconds per screen. Browser slideshow selection uses wall-clock slots and may be on a different slide from the device. Calendar image URLs preserve the scheduled minute even when downloaded after midnight.
+The default is `--screen slideshow --refresh 180`. Each successful device display request advances fortune → calendar → each available newspaper cover → fortune, independently per device. A center touchbar tap also advances the slideshow. Restarting the server starts the device sequence at fortune again. Use `--screen cowsay` or `--screen calendar` to show just one screen, and `--refresh` to change seconds per screen. Browser slideshow selection uses wall-clock slots and may be on a different slide from the device. Calendar image URLs preserve the scheduled minute even when downloaded after midnight.
+
+## Newspaper front pages
+
+By default the server discovers newspapers from **http://10.17.17.90:8100/api/newspapers**, then fetches each paper's `/api/newspapers/{id}/today` metadata and its `image_url`. Currently the service provides **The New York Times** and **El Nuevo Día**, giving a four-slide cycle with 180 seconds for each slide. Additional papers appear automatically in service catalog order.
+
+Set `--frontpages-url http://host:port` to change the source, or `--frontpages-url ''` to disable newspaper slides. The source is your [frontpages service](https://github.com/yencarnacion/frontpages); no API key is needed in Terminal Server. Fetching `/today` may trigger the source service's normal scrape/cache behavior. Terminal Server does not call admin or force-refresh endpoints.
+
+**Newspaper covers are never cached by Terminal Server.** Every cover-image request calls that paper's `/today` endpoint on port 8100, downloads the returned `image_url`, and renders it afresh. The cover is not retained on disk or in the rendered-image cache. Upstream requests send no-cache headers; downstream PNG responses send `Cache-Control: no-store, no-cache, max-age=0`. Every scheduled cover also has a unique timestamped filename to prevent the TRMNL from reusing yesterday's image. Even a repeated request to an old cover URL fetches `/today` again. Port 8100 remains responsible for obtaining the day's source edition; Terminal Server displays its reported **edition date** rather than assuming it matches today's date.
+
+Only the list of configured newspaper names/IDs is kept and refreshed every 15 minutes. Until the first catalog response, fortune and calendar continue alone. Removed papers disappear on the next successful catalog refresh. If a cover fetch fails, the image request fails rather than serving a saved edition. Fortune and calendar remain available. A catalog outage preserves the newspaper list, not any cover images.
+
+Each cover gets its own full-screen grayscale slide and the shared battery footer. Images are fitted proportionally without cropping, including any spread or advertisements supplied by the source. Source resolution limits readability; the server cannot add detail missing from a small source image. The current El Nuevo Día image is 468 × 492 pixels. Network timeouts, response-size limits, and an image-pixel limit bound failures. Cover URLs and redirects must stay on the configured frontpages origin.
+
+Open `/preview` and select either newspaper's name to inspect its slide. `/healthz` includes the number of discovered `covers` (configured newspaper slides, not a guarantee that their upstream images are currently available).
 
 ## Upgrade an existing installation
 
@@ -103,7 +117,7 @@ For startup at boot without logging in, enable lingering for the account with `s
 | `POST /api/log` | Accept device JSON logs, up to 64 KiB; requires `ACCESS_TOKEN` |
 | `GET /screens/{id}.png` | Stable PNG for a quote or captured calendar minute |
 
-`Screen` in `render.go` is the renderer interface; `calendar.go` implements the calendar. `screenID` selects the image input and `nextDisplay` controls the two-screen playlist. Rendering uses a bounded, concurrency-safe cache; evicted images are regenerated when needed. Calendar tests cover leap years, five/six-row months, local dates across UTC midnight, daylight-saving time, stable delayed image downloads, and independent device slideshow cursors.
+`Screen` in `render.go` is the renderer interface; `calendar.go` implements the calendar and `frontpages.go` fetches/renders newspaper covers. `screenID` selects the image input and `nextDisplay` controls the playlist. Fortune/calendar rendering uses a bounded, concurrency-safe cache; newspaper images bypass it entirely. Tests cover date boundaries, independent device cursors, the four-slide sequence, battery status, live fetching on every cover request, and changing editions without reusing old image data.
 
 ```sh
 go test -race ./...

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
@@ -8,6 +9,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"html"
 	"io"
 	"log"
 	"math/big"
@@ -21,19 +23,20 @@ import (
 )
 
 type app struct {
-	base     string
-	refresh  int
-	key      []byte
-	screen   Screen
-	quotes   map[string]string
-	ids      []string
-	mu       sync.Mutex
-	cache    map[string][]byte
-	mode     string
-	location *time.Location
-	now      func() time.Time
-	playMu   sync.Mutex
-	next     map[string]bool
+	base       string
+	refresh    int
+	key        []byte
+	screen     Screen
+	quotes     map[string]string
+	ids        []string
+	mu         sync.Mutex
+	cache      map[string][]byte
+	mode       string
+	location   *time.Location
+	now        func() time.Time
+	playMu     sync.Mutex
+	next       map[string]int
+	frontpages *frontpages
 }
 
 func loadKey(dir string) ([]byte, error) {
@@ -75,7 +78,7 @@ func newApp(base string, refresh int, screenName string, quotes []string, key []
 	if err != nil {
 		return nil, err
 	}
-	a := &app{base: base, refresh: refresh, key: key, screen: cowScreen{}, quotes: map[string]string{}, cache: map[string][]byte{}, mode: screenName, location: location, now: time.Now, next: map[string]bool{}}
+	a := &app{base: base, refresh: refresh, key: key, screen: cowScreen{}, quotes: map[string]string{}, cache: map[string][]byte{}, mode: screenName, location: location, now: time.Now, next: map[string]int{}}
 	for _, q := range quotes {
 		sum := sha256.Sum256([]byte("cowsay-v1:" + q))
 		id := hex.EncodeToString(sum[:16])
@@ -120,6 +123,27 @@ func (a *app) randomID() (string, error) {
 	return a.ids[n.Int64()], nil
 }
 func (a *app) image(id string) ([]byte, error) {
+	return a.imageContext(context.Background(), id)
+}
+
+func (a *app) imageContext(ctx context.Context, id string) ([]byte, error) {
+	// Newspaper images bypass the rendered-image cache entirely.
+	if strings.HasPrefix(id, "cover-") {
+		base, battery, err := splitBatteryID(id)
+		if err != nil {
+			return nil, os.ErrNotExist
+		}
+		if a.frontpages == nil {
+			return nil, os.ErrNotExist
+		}
+		bounded, cancel := context.WithTimeout(ctx, 25*time.Second)
+		defer cancel()
+		data, err := a.frontpages.render(bounded, base)
+		if err != nil {
+			return nil, err
+		}
+		return addBatteryFooter(data, battery)
+	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if data, ok := a.cache[id]; ok {
@@ -161,13 +185,25 @@ func (a *app) image(id string) ([]byte, error) {
 }
 
 func (a *app) screenID(mode string, now time.Time) (string, error) {
+	if strings.HasPrefix(mode, "cover-") {
+		return fmt.Sprintf("%s-%d", mode, now.UnixNano()), nil
+	}
 	if mode == "calendar" {
 		return "calendar-" + now.UTC().Format("20060102T1504Z"), nil
 	}
 	return a.randomID()
 }
 
-// Each device advances independently, only after a successfully rendered screen.
+func (a *app) playlist() []string {
+	slides := []string{"cowsay", "calendar"}
+	for _, cover := range a.frontpages.snapshot() {
+		slides = append(slides, cover.ID)
+	}
+	return slides
+}
+
+// Each device advances independently after successful display metadata delivery.
+// Cover bytes are fetched live on the subsequent image GET, never prefetched.
 // Preview/image downloads never consume a device's next slideshow item.
 func (a *app) nextDisplay(r *http.Request) (string, error) {
 	a.playMu.Lock()
@@ -177,24 +213,25 @@ func (a *app) nextDisplay(r *http.Request) (string, error) {
 		token = r.Header.Get("Access-Token")
 	}
 	mode := a.mode
+	playlist := a.playlist()
+	index := a.next[token] % len(playlist)
 	if mode == "slideshow" {
-		mode = "cowsay"
-		if a.next[token] {
-			mode = "calendar"
-		}
+		mode = playlist[index]
 	}
 	id, err := a.screenID(mode, a.now())
 	if err == nil {
 		id += readBattery(r.Header).suffix()
-		_, err = a.image(id)
+		if !strings.HasPrefix(id, "cover-") {
+			_, err = a.image(id)
+		}
 	}
 	if err == nil && a.mode == "slideshow" {
 		if len(a.next) >= 256 {
 			if _, ok := a.next[token]; !ok {
-				a.next = map[string]bool{}
+				a.next = map[string]int{}
 			}
 		}
-		a.next[token] = !a.next[token]
+		a.next[token] = (index + 1) % len(playlist)
 	}
 	return id, err
 }
@@ -202,7 +239,7 @@ func (a *app) nextDisplay(r *http.Request) (string, error) {
 func (a *app) routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
-		jsonResponse(w, map[string]any{"status": "ok", "screen": a.mode, "timezone": a.location.String(), "refresh_rate": a.refresh, "width": width, "height": height, "quotes": len(a.ids)})
+		jsonResponse(w, map[string]any{"status": "ok", "screen": a.mode, "timezone": a.location.String(), "refresh_rate": a.refresh, "width": width, "height": height, "quotes": len(a.ids), "covers": len(a.frontpages.snapshot())})
 	})
 	mux.HandleFunc("GET /api/setup", func(w http.ResponseWriter, r *http.Request) {
 		mac, err := net.ParseMAC(r.Header.Get("ID"))
@@ -254,18 +291,26 @@ func (a *app) routes() http.Handler {
 			return
 		}
 		id := strings.TrimSuffix(name, ".png")
-		data, err := a.image(id)
+		isCover := strings.HasPrefix(id, "cover-")
+		if isCover {
+			w.Header().Set("Cache-Control", "no-store, no-cache, max-age=0")
+			w.Header().Set("Pragma", "no-cache")
+		}
+		data, err := a.imageContext(r.Context(), id)
 		if err == os.ErrNotExist {
 			http.NotFound(w, r)
 			return
 		}
 		if err != nil {
+			log.Printf("screen render: %v", err)
 			http.Error(w, "render failed", 500)
 			return
 		}
 		w.Header().Set("Content-Type", "image/png")
 		w.Header().Set("Content-Length", fmt.Sprint(len(data)))
-		w.Header().Set("Cache-Control", "public, max-age=3600")
+		if !isCover {
+			w.Header().Set("Cache-Control", "public, max-age=3600")
+		}
 		_, _ = w.Write(data)
 	})
 	mux.HandleFunc("GET /preview", func(w http.ResponseWriter, r *http.Request) {
@@ -273,16 +318,28 @@ func (a *app) routes() http.Handler {
 		if mode == "" {
 			mode = a.mode
 		}
-		if mode != "slideshow" && mode != "calendar" && mode != "cowsay" {
+		covers := a.frontpages.snapshot()
+		links := ""
+		for _, cover := range covers {
+			links += fmt.Sprintf(`<a href="/preview?screen=%s">%s</a>`, cover.ID, html.EscapeString(cover.Name))
+		}
+		isCover := false
+		for _, cover := range covers {
+			if mode == cover.ID {
+				isCover = true
+			}
+		}
+		if mode != "slideshow" && mode != "calendar" && mode != "cowsay" && !isCover {
 			http.Error(w, "unknown screen", 400)
 			return
 		}
 		now := a.now()
 		if mode == "slideshow" {
-			mode = "cowsay"
-			if now.Unix()/int64(a.refresh)%2 == 1 {
-				mode = "calendar"
+			playlist := []string{"cowsay", "calendar"}
+			for _, cover := range covers {
+				playlist = append(playlist, cover.ID)
 			}
+			mode = playlist[now.Unix()/int64(a.refresh)%int64(len(playlist))]
 		}
 		id, err := a.screenID(mode, now)
 		if err != nil {
@@ -291,7 +348,7 @@ func (a *app) routes() http.Handler {
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Header().Set("Cache-Control", "no-store")
-		fmt.Fprintf(w, `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="%d"><title>Calendar & Fortune · Terminal Server</title><style>body{margin:0;padding:24px;background:#e6e5e1;font:16px system-ui;color:#222}header{max-width:1000px;margin:0 auto 20px;display:flex;justify-content:space-between;gap:20px;align-items:center;flex-wrap:wrap}h1{font-size:20px;margin:0 0 6px}p{margin:0;color:#555}a{color:inherit;margin-right:14px}img{display:block;width:100%%;max-width:1000px;height:auto;margin:auto;background:white;box-shadow:0 4px 24px #0002}</style><header><div><h1>Calendar & Fortune</h1><p>TRMNL X · 1872 × 1404 · %d seconds per screen · time shown is time at refresh</p></div><nav><a href="/preview">Slideshow</a><a href="/preview?screen=calendar">Calendar</a><a href="/preview?screen=cowsay">Fortune ↻</a></nav></header><img src="/screens/%s.png" width="1872" height="1404" alt="%s screen"></html>`, a.refresh, a.refresh, id, mode)
+		fmt.Fprintf(w, `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="%d"><title>Calendar, Fortune & Front Pages · Terminal Server</title><style>body{margin:0;padding:24px;background:#e6e5e1;font:16px system-ui;color:#222}header{max-width:1000px;margin:0 auto 20px;display:flex;justify-content:space-between;gap:20px;align-items:center;flex-wrap:wrap}h1{font-size:20px;margin:0 0 6px}p{margin:0;color:#555}a{color:inherit;margin-right:14px}img{display:block;width:100%%;max-width:1000px;height:auto;margin:auto;background:white;box-shadow:0 4px 24px #0002}</style><header><div><h1>Calendar, Fortune & Front Pages</h1><p>TRMNL X · 1872 × 1404 · %d seconds per screen · time shown is time at refresh</p></div><nav><a href="/preview">Slideshow</a><a href="/preview?screen=calendar">Calendar</a><a href="/preview?screen=cowsay">Fortune ↻</a>%s</nav></header><img src="/screens/%s.png" width="1872" height="1404" alt="%s screen"></html>`, a.refresh, a.refresh, links, id, mode)
 	})
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) { http.Redirect(w, r, "/preview", http.StatusSeeOther) })
 	return mux

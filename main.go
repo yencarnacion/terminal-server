@@ -27,6 +27,7 @@ func main() {
 	refresh := flag.Int("refresh", 180, "seconds each slideshow screen is displayed")
 	screen := flag.String("screen", "slideshow", "slideshow, cowsay, or calendar")
 	zone := flag.String("timezone", "America/New_York", "IANA timezone for calendar date and time")
+	frontpagesURL := flag.String("frontpages-url", "http://10.17.17.90:8100", "frontpages service origin; empty disables newspaper slides")
 	flag.Parse()
 	u, err := url.Parse(*base)
 	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") || u.RawQuery != "" || u.Fragment != "" || u.User != nil || (u.Path != "" && u.Path != "/") {
@@ -59,9 +60,18 @@ func main() {
 		log.Fatal(err)
 	}
 	app.location = location
+	if *frontpagesURL != "" {
+		app.frontpages, err = newFrontpages(*frontpagesURL)
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
 	server := &http.Server{Addr: *listen, Handler: app.routes(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	if app.frontpages != nil {
+		go app.frontpages.run(ctx)
+	}
 	go func() {
 		<-ctx.Done()
 		shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
