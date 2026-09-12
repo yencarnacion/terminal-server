@@ -74,6 +74,7 @@ func TestBatteryOnEveryScreen(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	a.slideOrder = []string{"quote", "calendar", "quarter"}
 	a.now = func() time.Time { return time.Date(2026, 9, 12, 19, 14, 0, 0, time.UTC) }
 	h := a.routes()
 	display := func(mac, charge string) string {

@@ -16,22 +16,23 @@ import (
 )
 
 type configuration struct {
-	Listen           string  `yaml:"listen"`
-	BaseURL          string  `yaml:"base_url"`
-	SlideSeconds     int     `yaml:"slide_seconds"`
-	Screen           string  `yaml:"screen"`
-	Timezone         string  `yaml:"timezone"`
-	QuotesFile       string  `yaml:"quotes_file"`
-	DataDir          string  `yaml:"data_dir"`
-	FrontpagesURL    string  `yaml:"frontpages_url"`
-	WeatherEnabled   bool    `yaml:"weather_enabled"`
-	WeatherLocation  string  `yaml:"weather_location"`
-	WeatherLatitude  float64 `yaml:"weather_latitude"`
-	WeatherLongitude float64 `yaml:"weather_longitude"`
+	SlideOrder       []string `yaml:"slide_order"`
+	Listen           string   `yaml:"listen"`
+	BaseURL          string   `yaml:"base_url"`
+	SlideSeconds     int      `yaml:"slide_seconds"`
+	Screen           string   `yaml:"screen"`
+	Timezone         string   `yaml:"timezone"`
+	QuotesFile       string   `yaml:"quotes_file"`
+	DataDir          string   `yaml:"data_dir"`
+	FrontpagesURL    string   `yaml:"frontpages_url"`
+	WeatherEnabled   bool     `yaml:"weather_enabled"`
+	WeatherLocation  string   `yaml:"weather_location"`
+	WeatherLatitude  float64  `yaml:"weather_latitude"`
+	WeatherLongitude float64  `yaml:"weather_longitude"`
 }
 
 func defaultConfiguration() configuration {
-	return configuration{Listen: ":8177", BaseURL: "http://10.17.17.90:8177", SlideSeconds: 120, Screen: "slideshow", Timezone: "America/New_York", DataDir: "./data", FrontpagesURL: "http://10.17.17.90:8100", WeatherEnabled: true, WeatherLocation: "San Juan, PR", WeatherLatitude: 18.4655, WeatherLongitude: -66.1057}
+	return configuration{SlideOrder: []string{"weather", "calendar", "quarter", "quote", "newspapers"}, Listen: ":8177", BaseURL: "http://10.17.17.90:8177", SlideSeconds: 120, Screen: "slideshow", Timezone: "America/New_York", DataDir: "./data", FrontpagesURL: "http://10.17.17.90:8100", WeatherEnabled: true, WeatherLocation: "San Juan, PR", WeatherLatitude: 18.4655, WeatherLongitude: -66.1057}
 }
 
 // Precedence: built-in defaults < YAML values < explicitly supplied CLI flags.
@@ -105,6 +106,21 @@ func validOrigin(value string) bool {
 }
 
 func (c configuration) validate() error {
+	if len(c.SlideOrder) == 0 {
+		return fmt.Errorf("slide_order must not be empty")
+	}
+	seen := map[string]bool{}
+	for _, name := range c.SlideOrder {
+		switch name {
+		case "weather", "calendar", "quarter", "quote", "newspapers":
+		default:
+			return fmt.Errorf("unknown slide_order entry %q", name)
+		}
+		if seen[name] {
+			return fmt.Errorf("duplicate slide_order entry %q", name)
+		}
+		seen[name] = true
+	}
 	if c.SlideSeconds < 60 {
 		return fmt.Errorf("slide_seconds / --refresh must be at least 60 seconds")
 	}

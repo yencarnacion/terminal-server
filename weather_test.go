@@ -124,7 +124,7 @@ func TestWeatherScreenAndPlaylist(t *testing.T) {
 	a.now = func() time.Time { return now }
 	a.weather.forecast = weatherFixture(now)
 	a.weather.fetched = now
-	if strings.Join(a.playlist(), ",") != "cowsay,calendar,quarter,weather" {
+	if strings.Join(a.playlist(), ",") != "weather,calendar,quarter,cowsay" {
 		t.Fatal(a.playlist())
 	}
 	id, _ := a.screenID("weather", now)

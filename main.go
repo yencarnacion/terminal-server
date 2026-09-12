@@ -50,6 +50,7 @@ func main() {
 		log.Fatal(err)
 	}
 	app.location = location
+	app.slideOrder = append([]string(nil), cfg.SlideOrder...)
 	if cfg.WeatherEnabled {
 		app.weather = newWeather(cfg)
 	}

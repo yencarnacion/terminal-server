@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -24,7 +25,7 @@ func TestConfigurationDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg != defaultConfiguration() {
+	if !reflect.DeepEqual(cfg, defaultConfiguration()) {
 		t.Fatalf("%+v", cfg)
 	}
 	if cfg.SlideSeconds != 120 {
@@ -43,7 +44,7 @@ func TestShippedConfiguration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg != defaultConfiguration() {
+	if !reflect.DeepEqual(cfg, defaultConfiguration()) {
 		t.Fatalf("shipped config diverges from defaults: %+v", cfg)
 	}
 }

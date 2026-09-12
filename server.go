@@ -38,6 +38,7 @@ type app struct {
 	next       map[string]int
 	frontpages *frontpages
 	weather    *weatherService
+	slideOrder []string
 }
 
 func loadKey(dir string) ([]byte, error) {
@@ -215,12 +216,30 @@ func (a *app) screenID(mode string, now time.Time) (string, error) {
 }
 
 func (a *app) playlist() []string {
-	slides := []string{"cowsay", "calendar", "quarter"}
-	if a.weather != nil {
-		slides = append(slides, "weather")
+	order := a.slideOrder
+	if order == nil {
+		order = defaultConfiguration().SlideOrder
 	}
-	for _, cover := range a.frontpages.snapshot() {
-		slides = append(slides, cover.ID)
+	var slides []string
+	for _, name := range order {
+		switch name {
+		case "weather":
+			if a.weather != nil {
+				slides = append(slides, "weather")
+			}
+		case "quote":
+			slides = append(slides, "cowsay")
+		case "calendar", "quarter":
+			slides = append(slides, name)
+		case "newspapers":
+			for _, cover := range a.frontpages.snapshot() {
+				slides = append(slides, cover.ID)
+			}
+		}
+	}
+	// Keep the device usable while an exclusively external playlist is unavailable.
+	if len(slides) == 0 {
+		slides = []string{"cowsay"}
 	}
 	return slides
 }

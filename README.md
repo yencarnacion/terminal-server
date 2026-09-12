@@ -24,9 +24,17 @@ go build -o bin/terminal-server .
 
 Open **http://10.17.17.90:8177/preview** for an automatically refreshing browser slideshow. Use **Calendar** or **Fortune** to preview either screen directly, or open `/preview?screen=calendar` and `/preview?screen=cowsay`. Browser previews never advance the device's playlist.
 
-The default is `--screen slideshow --refresh 120`. Each successful device display request advances fortune → calendar → quarter progress → weather → each available newspaper cover → fortune, independently per device. A center touchbar tap also advances the slideshow. Restarting the server starts the device sequence at fortune again. Use `--screen cowsay`, `--screen calendar`, or `--screen quarter` to show just one screen, and `--refresh` to change seconds per screen. Browser slideshow selection uses wall-clock slots and may be on a different slide from the device. Calendar image URLs preserve the scheduled minute even when downloaded after midnight.
+The default is `--screen slideshow --refresh 120`. Each successful device display request advances weather → calendar → quarter progress → fortune → each available newspaper cover → weather, independently per device. A center touchbar tap also advances the slideshow. Restarting the server starts the device sequence at the first available configured slide. Use `--screen cowsay`, `--screen calendar`, or `--screen quarter` to show just one screen, and `--refresh` to change seconds per screen. Browser slideshow selection uses wall-clock slots and may be on a different slide from the device. Calendar image URLs preserve the scheduled minute even when downloaded after midnight.
 
 ## Configuration
+
+Slide order is configurable in `config.yaml`:
+
+```yaml
+slide_order: [weather, calendar, quarter, quote, newspapers]
+```
+
+Reorder entries or omit screens you do not want, then restart the server. `quote` is the cowsay fortune screen; `newspapers` expands to one slide per discovered newspaper in the source server's catalog order (currently NYT, then El Nuevo Día). This includes all current screen types. Disabled weather and unavailable newspaper entries are skipped. If no configured slides are available, fortune is the temporary fallback. Empty lists, duplicate entries, and unknown names are rejected. This setting controls both the device and browser slideshow; single-screen mode ignores the order. Each expanded slide uses `slide_seconds`.
 
 The server reads **`config.yaml`** from its working directory at startup. To change the time between slides, edit:
 
@@ -63,7 +71,7 @@ An absent default `config.yaml` uses the built-in defaults. An explicitly reques
 
 ## Quarter progress
 
-The quarter-progress slide appears immediately after the calendar. Inspired by [TRMNL's Quarter Progress recipe](https://trmnl.com/recipes/212805), it displays one square per day of the current calendar quarter, large completed/remaining counts, and a percentage.
+By default, the quarter-progress slide appears immediately after the calendar. Inspired by [TRMNL's Quarter Progress recipe](https://trmnl.com/recipes/212805), it displays one square per day of the current calendar quarter, large completed/remaining counts, and a percentage.
 
 Completed local dates are filled dark, today is outlined with its date number, and future dates are light. **Days left includes today**; the percentage counts only fully completed days. On the first day it is 0%, and at the next quarter's local midnight it resets automatically. Calculations use the configured `--timezone` and count calendar dates, so leap years and DST do not introduce off-by-one errors.
 
@@ -71,7 +79,7 @@ Preview with `/preview?screen=quarter`, or run only this screen using `--screen 
 
 ## San Juan weather
 
-Weather appears after quarter progress, before newspaper covers. Inspired by the [Daily Weather recipe](https://trmnl.com/recipes/150460), it shows the full date, Puerto Rico local time (AST year-round), a large **forecast** temperature in Fahrenheit, rain chance, wind in mph, a short outlook, and five daily high/night-low cards. The battery footer remains visible. This is a forecast, not a live thermometer or emergency alert system.
+Weather appears first by default. Inspired by the [Daily Weather recipe](https://trmnl.com/recipes/150460), it shows the full date, Puerto Rico local time (AST year-round), a large **forecast** temperature in Fahrenheit, rain chance, wind in mph, a short outlook, and five daily high/night-low cards. The battery footer remains visible. This is a forecast, not a live thermometer or emergency alert system.
 
 Data comes directly from the free, public [NOAA/NWS API](https://www.weather.gov/documentation/services-web-api), using the San Juan forecast office's grid forecasts. No API key or subscription is needed. The server resolves coordinates via `/points`, then requests the returned forecast URL with `units=us`. It identifies itself with a User-Agent and checks all URLs/redirects stay on api.weather.gov. It does not scrape the weather.gov website. UV index is omitted because this NWS forecast endpoint does not supply it.
 

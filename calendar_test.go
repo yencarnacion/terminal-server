@@ -68,6 +68,7 @@ func TestSlideshowLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	a.slideOrder = []string{"quote", "calendar", "quarter"}
 	now := time.Date(2026, 9, 13, 3, 59, 0, 0, time.UTC) // Sept 12, 11:59 PM in New York.
 	a.now = func() time.Time { return now }
 	h := a.routes()

@@ -85,7 +85,7 @@ func TestFrontpagesSlideshowLiveFetch(t *testing.T) {
 	now := time.Date(2026, 9, 12, 20, 0, 0, 0, time.UTC)
 	a.now = func() time.Time { return now }
 	h := a.routes()
-	expected := []string{a.ids[0], "calendar-20260912T2000Z", "quarter-20260912T2000Z", slides[0].ID, slides[1].ID, a.ids[0]}
+	expected := []string{"calendar-20260912T2000Z", "quarter-20260912T2000Z", a.ids[0], slides[0].ID, slides[1].ID, "calendar-20260912T2000Z"}
 	var firstCoverID string
 	for _, want := range expected {
 		r := httptest.NewRequest("GET", "/api/display", nil)
