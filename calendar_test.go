@@ -119,10 +119,10 @@ func TestSlideshowLifecycle(t *testing.T) {
 	if !bytes.Equal(before, after) {
 		t.Fatal("calendar image changed after midnight")
 	}
-	if third := display("aa:bb:cc:dd:ee:01"); strings.HasPrefix(third, "calendar-") {
-		t.Fatal("third slide should be fortune")
+	if third := display("aa:bb:cc:dd:ee:01"); third != "quarter-20260913T0402Z" {
+		t.Fatal("third slide should be quarter progress", third)
 	}
-	if fourth := display("aa:bb:cc:dd:ee:01"); fourth != "calendar-20260913T0402Z" {
+	if fourth := display("aa:bb:cc:dd:ee:01"); fourth != first {
 		t.Fatal(fourth)
 	}
 	if _, err := a.image("calendar-invalid"); err == nil {

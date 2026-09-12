@@ -25,7 +25,7 @@ func main() {
 	quotes := flag.String("quotes", "", "optional fortune-format file; defaults to bundled quotes")
 	data := flag.String("data-dir", "data", "persistent device key directory")
 	refresh := flag.Int("refresh", 180, "seconds each slideshow screen is displayed")
-	screen := flag.String("screen", "slideshow", "slideshow, cowsay, or calendar")
+	screen := flag.String("screen", "slideshow", "slideshow, cowsay, calendar, or quarter")
 	zone := flag.String("timezone", "America/New_York", "IANA timezone for calendar date and time")
 	frontpagesURL := flag.String("frontpages-url", "http://10.17.17.90:8100", "frontpages service origin; empty disables newspaper slides")
 	flag.Parse()
