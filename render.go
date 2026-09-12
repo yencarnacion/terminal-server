@@ -160,6 +160,10 @@ func (cowScreen) Render(quote string) ([]byte, error) {
 	d.Dot = fixed.P(width-90-font.MeasureString(small, label).Ceil(), height-72)
 	d.DrawString(label)
 	// Indexed PNG with exactly 16 grayscale levels: 4-bit output for TRMNL X.
+	return encodeGrayPNG(img)
+}
+
+func encodeGrayPNG(img *image.Gray) ([]byte, error) {
 	palette := make(color.Palette, 16)
 	for i := range palette {
 		palette[i] = color.Gray{Y: uint8(i * 17)}
@@ -169,6 +173,6 @@ func (cowScreen) Render(quote string) ([]byte, error) {
 		output.Pix[i] = uint8((int(v) + 8) / 17)
 	}
 	var buf bytes.Buffer
-	err = png.Encode(&buf, output)
+	err := png.Encode(&buf, output)
 	return buf.Bytes(), err
 }

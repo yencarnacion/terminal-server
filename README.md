@@ -1,8 +1,10 @@
 # Terminal Server
 
-A small Go BYOS server for **TRMNL X**, starting with random cowsay fortunes. It renders native **1872 × 1404, 4-bit indexed grayscale PNGs** with an embedded monospace font. No browser, ImageMagick, database, `fortune`, or `cowsay` installation is needed.
+A small Go BYOS server for **TRMNL X**, alternating random cowsay fortunes and a month calendar **every three minutes**. It renders native **1872 × 1404, 4-bit indexed grayscale PNGs** with embedded fonts. No browser, ImageMagick, database, `fortune`, or `cowsay` installation is needed.
 
-The binary includes the 255 quotes from the original `custom_fortunes/my_quotes.txt`. Each display request chooses a quote; its image URL stays tied to that exact quote so concurrent requests cannot change the screen being downloaded.
+The binary includes the 255 quotes from the original `custom_fortunes/my_quotes.txt`. Fortune image URLs stay tied to the exact quote. The calendar takes its inspiration from a paper wall calendar: a bold month/year band, Sunday-first ruled grid, adjacent-month references, a prominent full date, today's cell highlighted in black, and a large time display.
+
+Calendar dates and times default to **America/New_York**, including daylight-saving changes. Override with `--timezone Europe/London` or another IANA zone. Timezone data is embedded, so the server does not depend on the host's timezone database. The displayed clock is **time at refresh**, not a continuously ticking clock: calendar and fortune each stay visible for 180 seconds, and the calendar normally gets a fresh timestamp every six minutes.
 
 ## Install on 10.17.17.90
 
@@ -19,7 +21,22 @@ go build -o bin/terminal-server .
   --data-dir ./data
 ```
 
-Open **http://10.17.17.90:8177/preview** to see a screen. “Another fortune” selects a new random quote. The device refresh interval defaults to 600 seconds; use `--refresh 1800` for 30 minutes.
+Open **http://10.17.17.90:8177/preview** for an automatically refreshing browser slideshow. Use **Calendar** or **Fortune** to preview either screen directly, or open `/preview?screen=calendar` and `/preview?screen=cowsay`. Browser previews never advance the device's playlist.
+
+The default is `--screen slideshow --refresh 180`. Each successful device display request alternates fortune → calendar → fortune, independently per device. A center touchbar tap also advances the slideshow. Restarting the server starts the device sequence at fortune again. Use `--screen cowsay` or `--screen calendar` to show just one screen, and `--refresh` to change seconds per screen. Browser slideshow selection uses wall-clock slots and may be on a different slide from the device. Calendar image URLs preserve the scheduled minute even when downloaded after midnight.
+
+## Upgrade an existing installation
+
+Stop the currently running server (Ctrl-C if running in a terminal), then run:
+
+```sh
+git pull --ff-only
+go test ./...
+go build -o bin/terminal-server .
+./bin/terminal-server
+```
+
+If using systemd, stop/start `terminal-server` with `systemctl --user stop terminal-server` and `systemctl --user start terminal-server` instead of launching it manually. Preserve the existing `data` directory and working directory. Remove old explicit `--screen cowsay` or `--refresh 600` arguments from your launch command/service so the new defaults apply. No TRMNL re-pairing is needed. Tap the center touchbar once to fetch the new three-minute refresh setting, or wait for the next scheduled wake.
 
 Port 8177 refused a TCP connection during development on September 12, 2026, so it was selected outside the excluded 8080–8099 range. A refused connection is not a permanent reservation or a guarantee against firewall rejection: confirm on the target host with `ss -ltn` (Linux) or `lsof -nP -iTCP:8177 -sTCP:LISTEN` (macOS) before starting. If needed, change both `--listen` and `--base-url`. Allow inbound TCP on the selected port from the device's LAN.
 
@@ -75,14 +92,14 @@ For startup at boot without logging in, enable lingering for the account with `s
 
 | Route | Purpose |
 | --- | --- |
-| `GET /preview` | Browser preview with another-fortune link |
+| `GET /preview` | Browser slideshow; optional `?screen=calendar` or `?screen=cowsay` |
 | `GET /healthz` | Health, quote count and resolution |
 | `GET /api/setup` | Provision using device MAC in `ID` |
-| `GET /api/display` | Random screen metadata; requires `ACCESS_TOKEN` |
+| `GET /api/display` | Next slideshow screen; requires `ACCESS_TOKEN` |
 | `POST /api/log` | Accept device JSON logs, up to 64 KiB; requires `ACCESS_TOKEN` |
-| `GET /screens/{id}.png` | Stable PNG for a particular quote |
+| `GET /screens/{id}.png` | Stable PNG for a quote or captured calendar minute |
 
-`Screen` in `render.go` is the renderer interface. Add generators to the registry in `newApp` and select one with `--screen`. Currently only `cowsay` is supported. A playlist is not implemented yet. Rendering uses a bounded, concurrency-safe cache; evicted images are regenerated when needed.
+`Screen` in `render.go` is the renderer interface; `calendar.go` implements the calendar. `screenID` selects the image input and `nextDisplay` controls the two-screen playlist. Rendering uses a bounded, concurrency-safe cache; evicted images are regenerated when needed. Calendar tests cover leap years, five/six-row months, local dates across UTC midnight, daylight-saving time, stable delayed image downloads, and independent device slideshow cursors.
 
 ```sh
 go test -race ./...

@@ -13,6 +13,7 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	_ "time/tzdata"
 )
 
 //go:embed quotes.txt
@@ -23,8 +24,9 @@ func main() {
 	base := flag.String("base-url", "http://10.17.17.90:8177", "URL reachable by the device")
 	quotes := flag.String("quotes", "", "optional fortune-format file; defaults to bundled quotes")
 	data := flag.String("data-dir", "data", "persistent device key directory")
-	refresh := flag.Int("refresh", 600, "device refresh interval in seconds")
-	screen := flag.String("screen", "cowsay", "screen generator")
+	refresh := flag.Int("refresh", 180, "seconds each slideshow screen is displayed")
+	screen := flag.String("screen", "slideshow", "slideshow, cowsay, or calendar")
+	zone := flag.String("timezone", "America/New_York", "IANA timezone for calendar date and time")
 	flag.Parse()
 	u, err := url.Parse(*base)
 	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") || u.RawQuery != "" || u.Fragment != "" || u.User != nil || (u.Path != "" && u.Path != "/") {
@@ -32,6 +34,10 @@ func main() {
 	}
 	if *refresh < 60 {
 		log.Fatal("refresh must be at least 60 seconds")
+	}
+	location, err := time.LoadLocation(*zone)
+	if err != nil {
+		log.Fatal(err)
 	}
 	content := []byte(bundledQuotes)
 	if *quotes != "" {
@@ -52,6 +58,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	app.location = location
 	server := &http.Server{Addr: *listen, Handler: app.routes(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
