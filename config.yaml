@@ -1,0 +1,14 @@
+# Seconds each slide stays on the TRMNL. Restart the server after editing.
+slide_seconds: 180
+
+listen: ":8177"
+base_url: "http://10.17.17.90:8177"
+screen: slideshow # slideshow, cowsay, calendar, or quarter
+timezone: America/New_York
+
+# Empty quotes_file uses the quotes bundled into the binary.
+quotes_file: ""
+data_dir: ./data
+
+# Empty frontpages_url disables newspaper slides. Covers are never cached.
+frontpages_url: "http://10.17.17.90:8100"

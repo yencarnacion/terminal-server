@@ -19,15 +19,47 @@ git clone https://github.com/yencarnacion/terminal-server.git
 cd terminal-server
 go test ./...
 go build -o bin/terminal-server .
-./bin/terminal-server \
-  --listen :8177 \
-  --base-url http://10.17.17.90:8177 \
-  --data-dir ./data
+./bin/terminal-server
 ```
 
 Open **http://10.17.17.90:8177/preview** for an automatically refreshing browser slideshow. Use **Calendar** or **Fortune** to preview either screen directly, or open `/preview?screen=calendar` and `/preview?screen=cowsay`. Browser previews never advance the device's playlist.
 
 The default is `--screen slideshow --refresh 180`. Each successful device display request advances fortune → calendar → quarter progress → each available newspaper cover → fortune, independently per device. A center touchbar tap also advances the slideshow. Restarting the server starts the device sequence at fortune again. Use `--screen cowsay`, `--screen calendar`, or `--screen quarter` to show just one screen, and `--refresh` to change seconds per screen. Browser slideshow selection uses wall-clock slots and may be on a different slide from the device. Calendar image URLs preserve the scheduled minute even when downloaded after midnight.
+
+## Configuration
+
+The server reads **`config.yaml`** from its working directory at startup. To change the time between slides, edit:
+
+```yaml
+slide_seconds: 300 # Five minutes per slide; default 180 (three minutes).
+```
+
+Restart the server after changing the file. **No rebuild is needed for configuration edits.** The TRMNL learns the new interval on its next request; tap the center touchbar to apply it sooner. This value sets the duration of every slide and the browser preview refresh interval. The minimum is 60 seconds.
+
+The shipped `config.yaml` includes all current startup settings:
+
+```yaml
+slide_seconds: 180
+listen: ":8177"
+base_url: "http://10.17.17.90:8177"
+screen: slideshow
+timezone: America/New_York
+quotes_file: ""
+data_dir: ./data
+frontpages_url: "http://10.17.17.90:8100"
+```
+
+`screen` accepts `slideshow`, `cowsay`, `calendar`, or `quarter`. Empty `quotes_file` uses bundled quotes; empty `frontpages_url` disables newspapers. Cover images are still fetched live and never cached.
+
+Settings precedence is **built-in defaults → YAML → explicitly supplied CLI flags**. Existing flags continue working, so `--refresh 180` overrides `slide_seconds` in the file. Remove explicit flags from your service/launch command for settings you want to control through YAML.
+
+```sh
+./bin/terminal-server --config /path/to/config.yaml
+./bin/terminal-server --config config.yaml --refresh 600
+./bin/terminal-server --config '' # Ignore YAML; use defaults and CLI flags.
+```
+
+An absent default `config.yaml` preserves the old built-in defaults. An explicitly requested missing config, invalid YAML, duplicate/unknown keys, unsupported settings, or multiple YAML documents fails at startup with an error. Relative file paths (including `quotes_file` and `data_dir`) remain relative to the server's working directory, not the YAML file's directory. Keep `data_dir` pointing to the existing device key when changing configuration. Startup logs show the effective interval and timezone.
 
 ## Quarter progress
 
@@ -97,7 +129,7 @@ After=network-online.target
 
 [Service]
 WorkingDirectory=/absolute/path/terminal-server
-ExecStart=/absolute/path/terminal-server/bin/terminal-server --listen :8177 --base-url http://10.17.17.90:8177 --data-dir ./data
+ExecStart=/absolute/path/terminal-server/bin/terminal-server --config /absolute/path/terminal-server/config.yaml
 Restart=on-failure
 RestartSec=5
 UMask=0077
