@@ -6,6 +6,10 @@ The binary includes the 255 quotes from the original `custom_fortunes/my_quotes.
 
 Calendar dates and times default to **America/New_York**, including daylight-saving changes. Override with `--timezone Europe/London` or another IANA zone. Timezone data is embedded, so the server does not depend on the host's timezone database. The displayed clock is **time at refresh**, not a continuously ticking clock: calendar and fortune each stay visible for 180 seconds, and the calendar normally gets a fresh timestamp every six minutes.
 
+Every device screen has a small bottom-center battery icon and percentage. It adds “Charging” when the device reports charging, or “Power connected” when USB power is reported without charging. At 20% or lower while off external power, the indicator turns black and adds “LOW”; otherwise it uses a quieter gray. Readings update at screen refresh, just like the clock.
+
+Battery telemetry comes from the current device request: `PERCENT_CHARGED` takes priority, with `BATTERY_CAPACITY` (remaining/full) as a fallback. Both hyphenated and underscored firmware headers are supported. Missing or invalid measurements show `Battery —`, including browser previews that have no device telemetry. Voltage alone is not converted into a guessed percentage. Each image URL captures its battery status, so caches and other devices cannot change that reading later.
+
 ## Install on 10.17.17.90
 
 Requires Go 1.24 or newer to build. The resulting binary has no runtime dependencies.

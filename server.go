@@ -125,6 +125,11 @@ func (a *app) image(id string) ([]byte, error) {
 	if data, ok := a.cache[id]; ok {
 		return data, nil
 	}
+	cacheID := id
+	id, battery, parseErr := splitBatteryID(id)
+	if parseErr != nil {
+		return nil, os.ErrNotExist
+	}
 	var data []byte
 	var err error
 	if strings.HasPrefix(id, "calendar-") {
@@ -143,11 +148,15 @@ func (a *app) image(id string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	data, err = addBatteryFooter(data, battery)
+	if err != nil {
+		return nil, err
+	}
 	// Bounded cache; evicted URLs can always be rendered again from their quote.
 	if len(a.cache) >= 128 {
 		a.cache = map[string][]byte{}
 	}
-	a.cache[id] = data
+	a.cache[cacheID] = data
 	return data, nil
 }
 
@@ -176,6 +185,7 @@ func (a *app) nextDisplay(r *http.Request) (string, error) {
 	}
 	id, err := a.screenID(mode, a.now())
 	if err == nil {
+		id += readBattery(r.Header).suffix()
 		_, err = a.image(id)
 	}
 	if err == nil && a.mode == "slideshow" {
@@ -200,7 +210,7 @@ func (a *app) routes() http.Handler {
 			http.Error(w, "ID header must be a MAC address", 400)
 			return
 		}
-		id := a.ids[0]
+		id := a.ids[0] + readBattery(r.Header).suffix()
 		if _, err = a.image(id); err != nil {
 			http.Error(w, "render failed", 500)
 			return
