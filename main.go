@@ -49,6 +49,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	app.news = newNews(cfg.RSSURL)
 	app.location = location
 	app.slideOrder = append([]string(nil), cfg.SlideOrder...)
 	app.polymarket, err = newPolymarket(cfg.PolymarketPages)
@@ -67,6 +68,9 @@ func main() {
 	server := &http.Server{Addr: cfg.Listen, Handler: app.routes(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	if app.news != nil {
+		go app.news.run(ctx)
+	}
 	if app.frontpages != nil {
 		go app.frontpages.run(ctx)
 	}

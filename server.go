@@ -23,6 +23,7 @@ import (
 )
 
 type app struct {
+	news       *newsService
 	base       string
 	refresh    int
 	key        []byte
@@ -74,7 +75,7 @@ func loadKey(dir string) ([]byte, error) {
 }
 
 func newApp(base string, refresh int, screenName string, quotes []string, key []byte) (*app, error) {
-	if screenName != "cowsay" && screenName != "calendar" && screenName != "quarter" && screenName != "slideshow" && screenName != "weather" {
+	if screenName != "rss" && screenName != "cowsay" && screenName != "calendar" && screenName != "quarter" && screenName != "slideshow" && screenName != "weather" {
 		return nil, fmt.Errorf("unknown screen %q", screenName)
 	}
 	location, err := time.LoadLocation("America/New_York")
@@ -130,6 +131,20 @@ func (a *app) image(id string) ([]byte, error) {
 }
 
 func (a *app) imageContext(ctx context.Context, id string) ([]byte, error) {
+	if strings.HasPrefix(id, "rss-") {
+		base, battery, err := splitBatteryID(id)
+		if err != nil || a.news == nil {
+			return nil, os.ErrNotExist
+		}
+		if _, err := time.Parse("20060102T1504Z", strings.TrimPrefix(base, "rss-")); err != nil {
+			return nil, os.ErrNotExist
+		}
+		data, err := a.news.render()
+		if err != nil {
+			return nil, err
+		}
+		return addBatteryFooter(data, battery)
+	}
 	if strings.HasPrefix(id, "poly-") {
 		base, battery, err := splitBatteryID(id)
 		if err != nil || a.polymarket == nil {
@@ -221,7 +236,7 @@ func (a *app) screenID(mode string, now time.Time) (string, error) {
 	if strings.HasPrefix(mode, "cover-") || strings.HasPrefix(mode, "poly-") {
 		return fmt.Sprintf("%s-%d", mode, now.UnixNano()), nil
 	}
-	if mode == "calendar" || mode == "quarter" || mode == "weather" {
+	if mode == "rss" || mode == "calendar" || mode == "quarter" || mode == "weather" {
 		return mode + "-" + now.UTC().Format("20060102T1504Z"), nil
 	}
 	return a.randomID()
@@ -235,6 +250,10 @@ func (a *app) playlist() []string {
 	var slides []string
 	for _, name := range order {
 		switch name {
+		case "rss":
+			if len(a.news.snapshot()) > 0 {
+				slides = append(slides, "rss")
+			}
 		case "weather":
 			if a.weather != nil {
 				slides = append(slides, "weather")
@@ -279,7 +298,7 @@ func (a *app) nextDisplay(r *http.Request) (string, error) {
 	id, err := a.screenID(mode, a.now())
 	if err == nil {
 		id += readBattery(r.Header).suffix()
-		if !strings.HasPrefix(id, "cover-") && !strings.HasPrefix(id, "weather-") && !strings.HasPrefix(id, "poly-") {
+		if !strings.HasPrefix(id, "rss-") && !strings.HasPrefix(id, "cover-") && !strings.HasPrefix(id, "weather-") && !strings.HasPrefix(id, "poly-") {
 			_, err = a.image(id)
 		}
 	}
@@ -349,7 +368,7 @@ func (a *app) routes() http.Handler {
 			return
 		}
 		id := strings.TrimSuffix(name, ".png")
-		isLive := strings.HasPrefix(id, "cover-") || strings.HasPrefix(id, "weather-") || strings.HasPrefix(id, "poly-")
+		isLive := strings.HasPrefix(id, "rss-") || strings.HasPrefix(id, "cover-") || strings.HasPrefix(id, "weather-") || strings.HasPrefix(id, "poly-")
 		if isLive {
 			w.Header().Set("Cache-Control", "no-store, no-cache, max-age=0")
 			w.Header().Set("Pragma", "no-cache")
@@ -378,6 +397,9 @@ func (a *app) routes() http.Handler {
 		}
 		covers := a.frontpages.snapshot()
 		links := ""
+		if a.news != nil {
+			links += `<a href="/preview?screen=rss">Top News</a>`
+		}
 		if a.weather != nil {
 			links += `<a href="/preview?screen=weather">Weather</a>`
 		}
@@ -396,7 +418,7 @@ func (a *app) routes() http.Handler {
 				isCover = true
 			}
 		}
-		if mode != "slideshow" && mode != "calendar" && mode != "quarter" && mode != "cowsay" && !(mode == "weather" && a.weather != nil) && !isCover {
+		if !(mode == "rss" && a.news != nil) && mode != "slideshow" && mode != "calendar" && mode != "quarter" && mode != "cowsay" && !(mode == "weather" && a.weather != nil) && !isCover {
 			http.Error(w, "unknown screen", 400)
 			return
 		}

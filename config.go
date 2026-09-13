@@ -16,6 +16,7 @@ import (
 )
 
 type configuration struct {
+	RSSURL           string   `yaml:"rss_url"`
 	PolymarketPages  []string `yaml:"polymarket_pages"`
 	SlideOrder       []string `yaml:"slide_order"`
 	Listen           string   `yaml:"listen"`
@@ -33,7 +34,7 @@ type configuration struct {
 }
 
 func defaultConfiguration() configuration {
-	return configuration{PolymarketPages: []string{"https://polymarket.com/event/what-price-will-bitcoin-hit-before-2027", "https://polymarket.com/event/which-party-will-win-the-house-in-2026", "https://polymarket.com/event/which-party-will-win-the-senate-in-2026"}, SlideOrder: []string{"weather", "calendar", "quarter", "quote", "newspapers", "polymarket"}, Listen: ":8177", BaseURL: "http://10.17.17.90:8177", SlideSeconds: 60, Screen: "slideshow", Timezone: "America/New_York", DataDir: "./data", FrontpagesURL: "http://10.17.17.90:8100", WeatherEnabled: true, WeatherLocation: "San Juan, PR", WeatherLatitude: 18.4655, WeatherLongitude: -66.1057}
+	return configuration{RSSURL: defaultRSSURL, PolymarketPages: []string{"https://polymarket.com/event/what-price-will-bitcoin-hit-before-2027", "https://polymarket.com/event/which-party-will-win-the-house-in-2026", "https://polymarket.com/event/which-party-will-win-the-senate-in-2026"}, SlideOrder: []string{"rss", "weather", "calendar", "quarter", "quote", "newspapers", "polymarket"}, Listen: ":8177", BaseURL: "http://10.17.17.90:8177", SlideSeconds: 60, Screen: "slideshow", Timezone: "America/New_York", DataDir: "./data", FrontpagesURL: "http://10.17.17.90:8100", WeatherEnabled: true, WeatherLocation: "San Juan, PR", WeatherLatitude: 18.4655, WeatherLongitude: -66.1057}
 }
 
 // Precedence: built-in defaults < YAML values < explicitly supplied CLI flags.
@@ -47,7 +48,7 @@ func readConfiguration(args []string, output io.Writer) (configuration, error) {
 	fs.StringVar(&cli.Listen, "listen", cli.Listen, "HTTP bind address")
 	fs.StringVar(&cli.BaseURL, "base-url", cli.BaseURL, "URL reachable by the device")
 	fs.IntVar(&cli.SlideSeconds, "refresh", cli.SlideSeconds, "seconds each slideshow screen is displayed")
-	fs.StringVar(&cli.Screen, "screen", cli.Screen, "slideshow, cowsay, calendar, quarter, or weather")
+	fs.StringVar(&cli.Screen, "screen", cli.Screen, "slideshow, cowsay, calendar, quarter, weather, or rss")
 	fs.StringVar(&cli.Timezone, "timezone", cli.Timezone, "IANA timezone")
 	fs.StringVar(&cli.QuotesFile, "quotes", cli.QuotesFile, "fortune-format file; empty uses bundled quotes")
 	fs.StringVar(&cli.DataDir, "data-dir", cli.DataDir, "persistent device key directory")
@@ -113,7 +114,7 @@ func (c configuration) validate() error {
 	seen := map[string]bool{}
 	for _, name := range c.SlideOrder {
 		switch name {
-		case "weather", "calendar", "quarter", "quote", "newspapers", "polymarket":
+		case "rss", "weather", "calendar", "quarter", "quote", "newspapers", "polymarket":
 		default:
 			return fmt.Errorf("unknown slide_order entry %q", name)
 		}
@@ -148,7 +149,13 @@ func (c configuration) validate() error {
 	if c.FrontpagesURL != "" && !validOrigin(c.FrontpagesURL) {
 		return fmt.Errorf("frontpages_url / --frontpages-url must be an absolute HTTP(S) origin or empty")
 	}
-	if c.Screen != "slideshow" && c.Screen != "cowsay" && c.Screen != "calendar" && c.Screen != "quarter" && c.Screen != "weather" {
+	if c.RSSURL != "" && !validNewsURL(c.RSSURL) {
+		return fmt.Errorf("rss_url must be an absolute HTTP(S) URL or empty")
+	}
+	if c.Screen == "rss" && c.RSSURL == "" {
+		return fmt.Errorf("rss screen requires rss_url")
+	}
+	if c.Screen != "rss" && c.Screen != "slideshow" && c.Screen != "cowsay" && c.Screen != "calendar" && c.Screen != "quarter" && c.Screen != "weather" {
 		return fmt.Errorf("unknown screen %q", c.Screen)
 	}
 	if c.WeatherEnabled && (!(c.WeatherLatitude >= -90 && c.WeatherLatitude <= 90) || !(c.WeatherLongitude >= -180 && c.WeatherLongitude <= 180) || strings.TrimSpace(c.WeatherLocation) == "" || len(c.WeatherLocation) > 60) {

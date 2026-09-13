@@ -1,6 +1,6 @@
 # Terminal Server
 
-A small Go BYOS server for **TRMNL X**, showing random cowsay fortunes, a month calendar, quarter progress, San Juan weather, newspaper front pages, and configurable Polymarket pages, **one minute per slide** by default. It renders native **1872 × 1404, 4-bit indexed grayscale PNGs** with embedded fonts. No browser, ImageMagick, database, `fortune`, or `cowsay` installation is needed.
+A small Go BYOS server for **TRMNL X**, showing RSS top news, random cowsay fortunes, a month calendar, quarter progress, San Juan weather, newspaper front pages, and configurable Polymarket pages, **one minute per slide** by default. It renders native **1872 × 1404, 4-bit indexed grayscale PNGs** with embedded fonts. No browser, ImageMagick, database, `fortune`, or `cowsay` installation is needed.
 
 The binary includes the 255 quotes from the original `custom_fortunes/my_quotes.txt`. Fortune image URLs stay tied to the exact quote. The calendar takes its inspiration from a paper wall calendar: a bold month/year band, Sunday-first ruled grid, adjacent-month references, a prominent full date, today's cell highlighted in black, and a large time display.
 
@@ -24,14 +24,22 @@ go build -o bin/terminal-server .
 
 Open **http://10.17.17.90:8177/preview** for an automatically refreshing browser slideshow. Use **Calendar** or **Fortune** to preview either screen directly, or open `/preview?screen=calendar` and `/preview?screen=cowsay`. Browser previews never advance the device's playlist.
 
-The default is `--screen slideshow --refresh 60`. Each successful device display request advances weather → calendar → quarter progress → fortune → each available newspaper cover → each configured Polymarket page → weather, independently per device. A center touchbar tap also advances the slideshow. Restarting the server starts the device sequence at the first available configured slide. Use `--screen cowsay`, `--screen calendar`, or `--screen quarter` to show just one screen, and `--refresh` to change seconds per screen. Browser slideshow selection uses wall-clock slots and may be on a different slide from the device. Calendar image URLs preserve the scheduled minute even when downloaded after midnight.
+The default is `--screen slideshow --refresh 60`. Each successful device display request advances available RSS news → weather → calendar → quarter progress → fortune → each available newspaper cover → each configured Polymarket page → weather, independently per device. A center touchbar tap also advances the slideshow. Restarting the server starts the device sequence at the first available configured slide. Use `--screen cowsay`, `--screen calendar`, or `--screen quarter` to show just one screen, and `--refresh` to change seconds per screen. Browser slideshow selection uses wall-clock slots and may be on a different slide from the device. Calendar image URLs preserve the scheduled minute even when downloaded after midnight.
+
+## Top News
+
+`rss_url` in `config.yaml` defaults to `http://10.17.17.98:8090/up2date/rss.xml`; set it to an empty string to disable news. The `rss` slide is first in the default order. The feed is checked at startup and every minute; empty, malformed, or unavailable feeds are skipped automatically and reappear after recovery.
+
+Headlines use the same embedded monospace font at the quote renderer's largest size (64 points). Each item has a prominent QR code for its article URL, with a white quiet zone and crisp integer-sized modules. Only complete rows that fit are shown, in feed order; headlines and QR codes are never shrunk to squeeze in more items. Items without usable HTTP(S) links, or with URLs too dense for a scannable code, are skipped. News is rendered from the latest successful poll without an image cache.
+
+Preview with `/preview?screen=rss`, or use `screen: rss` for news only. The direct preview shows an empty-state message when news is unavailable. Restart after changing configuration.
 
 ## Configuration
 
 Slide order is configurable in `config.yaml`:
 
 ```yaml
-slide_order: [weather, calendar, quarter, quote, newspapers, polymarket]
+slide_order: [rss, weather, calendar, quarter, quote, newspapers, polymarket]
 ```
 
 Reorder entries or omit screens you do not want, then restart the server. `quote` is the cowsay fortune screen; `newspapers` expands to one slide per discovered newspaper in the source server's catalog order (currently NYT, then El Nuevo Día). `polymarket` expands to the configured event/market pages in their list order; blank URL slots are skipped. This includes all current screen types. Disabled weather and unavailable newspaper entries are skipped. If no configured slides are available, fortune is the temporary fallback. Empty lists, duplicate entries, and unknown names are rejected. This setting controls both the device and browser slideshow; single-screen mode ignores the order. Each expanded slide uses `slide_seconds`.
@@ -105,7 +113,7 @@ Inspired by the [TRMNL Polymarket recipe](https://trmnl.com/recipes/186483), eac
 Paste up to three page URLs into `config.yaml`, then restart:
 
 ```yaml
-slide_order: [weather, calendar, quarter, quote, newspapers, polymarket]
+slide_order: [rss, weather, calendar, quarter, quote, newspapers, polymarket]
 polymarket_pages:
   - "https://polymarket.com/event/what-price-will-bitcoin-hit-before-2027"
   - "https://polymarket.com/event/which-party-will-win-the-house-in-2026"
