@@ -41,6 +41,7 @@ type app struct {
 	weather    *weatherService
 	slideOrder []string
 	polymarket *polymarketService
+	kalshi     *kalshiService
 }
 
 func loadKey(dir string) ([]byte, error) {
@@ -156,6 +157,17 @@ func (a *app) imageContext(ctx context.Context, id string) ([]byte, error) {
 		}
 		return addBatteryFooter(data, battery)
 	}
+	if strings.HasPrefix(id, "kalshi-") {
+		base, battery, err := splitBatteryID(id)
+		if err != nil || a.kalshi == nil {
+			return nil, os.ErrNotExist
+		}
+		data, err := a.kalshi.render(ctx, base, a.now().In(a.location))
+		if err != nil {
+			return nil, err
+		}
+		return addBatteryFooter(data, battery)
+	}
 	if strings.HasPrefix(id, "weather-") {
 		base, battery, err := splitBatteryID(id)
 		if err != nil || a.weather == nil {
@@ -233,7 +245,7 @@ func (a *app) imageContext(ctx context.Context, id string) ([]byte, error) {
 }
 
 func (a *app) screenID(mode string, now time.Time) (string, error) {
-	if strings.HasPrefix(mode, "cover-") || strings.HasPrefix(mode, "poly-") {
+	if strings.HasPrefix(mode, "cover-") || strings.HasPrefix(mode, "poly-") || strings.HasPrefix(mode, "kalshi-") {
 		return fmt.Sprintf("%s-%d", mode, now.UnixNano()), nil
 	}
 	if mode == "rss" || mode == "calendar" || mode == "quarter" || mode == "weather" {
@@ -265,6 +277,10 @@ func (a *app) playlist() []string {
 		case "newspapers":
 			for _, cover := range a.frontpages.snapshot() {
 				slides = append(slides, cover.ID)
+			}
+		case "kalshi":
+			for _, page := range a.kalshi.pages() {
+				slides = append(slides, page.ID)
 			}
 		case "polymarket":
 			for _, page := range a.polymarket.pages() {
@@ -368,7 +384,7 @@ func (a *app) routes() http.Handler {
 			return
 		}
 		id := strings.TrimSuffix(name, ".png")
-		isLive := strings.HasPrefix(id, "rss-") || strings.HasPrefix(id, "cover-") || strings.HasPrefix(id, "weather-") || strings.HasPrefix(id, "poly-")
+		isLive := strings.HasPrefix(id, "rss-") || strings.HasPrefix(id, "cover-") || strings.HasPrefix(id, "weather-") || strings.HasPrefix(id, "poly-") || strings.HasPrefix(id, "kalshi-")
 		if isLive {
 			w.Header().Set("Cache-Control", "no-store, no-cache, max-age=0")
 			w.Header().Set("Pragma", "no-cache")
@@ -409,6 +425,12 @@ func (a *app) routes() http.Handler {
 		isCover := false
 		for i, page := range a.polymarket.pages() {
 			links += fmt.Sprintf(`<a href="/preview?screen=%s">Polymarket %d</a>`, page.ID, i+1)
+			if mode == page.ID {
+				isCover = true
+			}
+		}
+		for _, page := range a.kalshi.pages() {
+			links += fmt.Sprintf(`<a href="/preview?screen=%s">%s</a>`, page.ID, html.EscapeString(page.Label))
 			if mode == page.ID {
 				isCover = true
 			}

@@ -1,6 +1,6 @@
 # Seconds each slide stays on the TRMNL. Restart the server after editing.
 slide_seconds: 300
-slide_order: [rss, weather, calendar, quarter, quote, newspapers, polymarket]
+slide_order: [rss, weather, calendar, quarter, quote, newspapers, polymarket, kalshi]
 
 listen: ":8177"
 base_url: "http://10.17.17.90:8177"
@@ -26,3 +26,10 @@ polymarket_pages:
 
 # Empty rss_url disables Top News. Empty/offline feeds are retried every minute.
 rss_url: "http://10.17.17.98:8090/up2date/rss.xml"
+
+# Event URLs stay fixed; series entries automatically follow the current open week.
+kalshi_pages:
+  - "https://kalshi.com/markets/kxbtcy/btc-price-range-eoy/kxbtcy-27jan0100"
+  - "https://kalshi.com/markets/kxbalancepowercombo/congress-balance-of-power-combo/kxbalancepowercombo-27feb"
+  - "series:KXNETFLIXRANKMOVIE"
+  - "series:KXNETFLIXRANKSHOWRUNNERUP"

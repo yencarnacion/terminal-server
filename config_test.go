@@ -44,8 +44,11 @@ func TestShippedConfiguration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(cfg, defaultConfiguration()) {
-		t.Fatalf("shipped config diverges from defaults: %+v", cfg)
+	expected := defaultConfiguration()
+	// The checked-in deployment uses five-minute slides.
+	expected.SlideSeconds = 300
+	if !reflect.DeepEqual(cfg, expected) {
+		t.Fatalf("shipped config diverges from expected settings: %+v", cfg)
 	}
 }
 

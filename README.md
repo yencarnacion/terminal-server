@@ -1,6 +1,6 @@
 # Terminal Server
 
-A small Go BYOS server for **TRMNL X**, showing RSS top news, random cowsay fortunes, a month calendar, quarter progress, San Juan weather, newspaper front pages, and configurable Polymarket pages, **one minute per slide** by default. It renders native **1872 × 1404, 4-bit indexed grayscale PNGs** with embedded fonts. No browser, ImageMagick, database, `fortune`, or `cowsay` installation is needed.
+A small Go BYOS server for **TRMNL X**, showing RSS top news, random cowsay fortunes, a month calendar, quarter progress, San Juan weather, newspaper front pages, and configurable Polymarket and Kalshi pages, **one minute per slide** by default. It renders native **1872 × 1404, 4-bit indexed grayscale PNGs** with embedded fonts. No browser, ImageMagick, database, `fortune`, or `cowsay` installation is needed.
 
 The binary includes the 255 quotes from the original `custom_fortunes/my_quotes.txt`. Fortune image URLs stay tied to the exact quote. The calendar takes its inspiration from a paper wall calendar: a bold month/year band, Sunday-first ruled grid, adjacent-month references, a prominent full date, today's cell highlighted in black, and a large time display.
 
@@ -24,7 +24,7 @@ go build -o bin/terminal-server .
 
 Open **http://10.17.17.90:8177/preview** for an automatically refreshing browser slideshow. Use **Calendar** or **Fortune** to preview either screen directly, or open `/preview?screen=calendar` and `/preview?screen=cowsay`. Browser previews never advance the device's playlist.
 
-The default is `--screen slideshow --refresh 60`. Each successful device display request advances available RSS news → weather → calendar → quarter progress → fortune → each available newspaper cover → each configured Polymarket page → weather, independently per device. A center touchbar tap also advances the slideshow. Restarting the server starts the device sequence at the first available configured slide. Use `--screen cowsay`, `--screen calendar`, or `--screen quarter` to show just one screen, and `--refresh` to change seconds per screen. Browser slideshow selection uses wall-clock slots and may be on a different slide from the device. Calendar image URLs preserve the scheduled minute even when downloaded after midnight.
+The default is `--screen slideshow --refresh 60`. Each successful device display request advances available RSS news → weather → calendar → quarter progress → fortune → each available newspaper cover → each configured Polymarket page → each configured Kalshi page → weather, independently per device. A center touchbar tap also advances the slideshow. Restarting the server starts the device sequence at the first available configured slide. Use `--screen cowsay`, `--screen calendar`, or `--screen quarter` to show just one screen, and `--refresh` to change seconds per screen. Browser slideshow selection uses wall-clock slots and may be on a different slide from the device. Calendar image URLs preserve the scheduled minute even when downloaded after midnight.
 
 ## Top News
 
@@ -39,10 +39,10 @@ Preview with `/preview?screen=rss`, or use `screen: rss` for news only. The dire
 Slide order is configurable in `config.yaml`:
 
 ```yaml
-slide_order: [rss, weather, calendar, quarter, quote, newspapers, polymarket]
+slide_order: [rss, weather, calendar, quarter, quote, newspapers, polymarket, kalshi]
 ```
 
-Reorder entries or omit screens you do not want, then restart the server. `quote` is the cowsay fortune screen; `newspapers` expands to one slide per discovered newspaper in the source server's catalog order (currently NYT, then El Nuevo Día). `polymarket` expands to the configured event/market pages in their list order; blank URL slots are skipped. This includes all current screen types. Disabled weather and unavailable newspaper entries are skipped. If no configured slides are available, fortune is the temporary fallback. Empty lists, duplicate entries, and unknown names are rejected. This setting controls both the device and browser slideshow; single-screen mode ignores the order. Each expanded slide uses `slide_seconds`.
+Reorder entries or omit screens you do not want, then restart the server. `quote` is the cowsay fortune screen; `newspapers` expands to one slide per discovered newspaper in the source server's catalog order (currently NYT, then El Nuevo Día). `polymarket` expands to the configured event/market pages in their list order; blank URL slots are skipped. `kalshi` expands to the configured Kalshi pages after Polymarket by default. This includes all current screen types. Disabled weather and unavailable newspaper entries are skipped. If no configured slides are available, fortune is the temporary fallback. Empty lists, duplicate entries, and unknown names are rejected. This setting controls both the device and browser slideshow; single-screen mode ignores the order. Each expanded slide uses `slide_seconds`.
 
 The server reads **`config.yaml`** from its working directory at startup. To change the time between slides, edit:
 
@@ -113,7 +113,7 @@ Inspired by the [TRMNL Polymarket recipe](https://trmnl.com/recipes/186483), eac
 Paste up to three page URLs into `config.yaml`, then restart:
 
 ```yaml
-slide_order: [rss, weather, calendar, quarter, quote, newspapers, polymarket]
+slide_order: [rss, weather, calendar, quarter, quote, newspapers, polymarket, kalshi]
 polymarket_pages:
   - "https://polymarket.com/event/what-price-will-bitcoin-hit-before-2027"
   - "https://polymarket.com/event/which-party-will-win-the-house-in-2026"
@@ -125,6 +125,24 @@ The initial pages are Bitcoin, House, and Senate, in that order. Replace these U
 The server fetches the public [Polymarket Gamma API](https://docs.polymarket.com/api-reference/events/get-event-by-slug) on every image request, with no API key, local data cache, or image cache. Requests have an 18-second timeout, a 4 MiB response limit, and redirects restricted to the API host. API errors produce an unavailable slide and retry on the next display rather than showing saved prices.
 
 Single-market pages show each outcome; multi-market events show the Yes price for each binary market (or each named outcome for nonbinary markets). Up to six rows fit on a screen, with a visible shown/total count. Open markets sort first, then descending outcome price. Archived markets are omitted; closed/inactive markets are labeled. Missing or invalid prices show a dash. Percentages are reported market prices, not guaranteed probabilities or a complete order-book quote; fetch time is not the time of the last trade. This version does not include price-history charts.
+
+## Kalshi pages
+
+Four Kalshi slides follow Polymarket: Bitcoin's end-of-2026 price range, Congress balance of power, the top US Netflix movie, and the #2 US Netflix show. They share the prediction-market layout, date/time, battery footer, and configured slide duration (300 seconds in the checked-in configuration). Each has a browser preview link.
+
+```yaml
+kalshi_pages:
+  - "https://kalshi.com/markets/kxbtcy/btc-price-range-eoy/kxbtcy-27jan0100"
+  - "https://kalshi.com/markets/kxbalancepowercombo/congress-balance-of-power-combo/kxbalancepowercombo-27feb"
+  - "series:KXNETFLIXRANKMOVIE"
+  - "series:KXNETFLIXRANKSHOWRUNNERUP"
+```
+
+Event URLs select fixed events. A `series:TICKER` entry discovers open events on every display and selects the nearest closing event with an active, already-open market. The Netflix slides therefore roll forward automatically each week; the event subtitle identifies the chart publication date. When no open week is available, the slide displays an unavailable message and retries next time. It does not reuse a settled week's prices. Up to four entries are supported; blanks are skipped and duplicates rejected. Use `kalshi_pages: []` or omit `kalshi` from `slide_order` to disable them.
+
+The public [Kalshi market-data API](https://docs.kalshi.com/getting_started/quick_start_market_data) supplies fresh data without an API key. Requests have an 18-second total deadline, a 4 MiB per-response limit, restricted redirects, and no data/image cache. Weekly discovery follows [event-list pagination](https://docs.kalshi.com/api-reference/events/get-events).
+
+Slides show the six highest last-trade prices, with open markets first, and report the total outcome count. Prices are expressed as percentages; settled outcomes use their Yes/No result. Missing, invalid, and untraded prices display a dash. Restart the server after changing configuration.
 
 ## Newspaper front pages
 

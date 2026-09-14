@@ -56,6 +56,10 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	app.kalshi, err = newKalshi(cfg.KalshiPages)
+	if err != nil {
+		log.Fatal(err)
+	}
 	if cfg.WeatherEnabled {
 		app.weather = newWeather(cfg)
 	}

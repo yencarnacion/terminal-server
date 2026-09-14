@@ -252,6 +252,10 @@ func (p *polymarketService) render(ctx context.Context, id string, now time.Time
 }
 
 func renderPolymarket(event polyEvent, now time.Time, fetchErr error) ([]byte, error) {
+	return renderMarketPage("POLYMARKET", "Polymarket Gamma API", event.Title, polyRows(event), "OUTCOME PRICES", now, fetchErr)
+}
+
+func renderMarketPage(brand, source, title string, rows []polyRow, priceLabel string, now time.Time, fetchErr error) ([]byte, error) {
 	regular, err := opentype.Parse(goregular.TTF)
 	if err != nil {
 		return nil, err
@@ -297,7 +301,7 @@ func renderPolymarket(event polyEvent, now time.Time, fetchErr error) ([]byte, e
 	rect := func(x, y, x1, y1 int, v uint8) {
 		draw.Draw(img, image.Rect(x, y, x1, y1), image.NewUniform(color.Gray{Y: v}), image.Point{}, draw.Src)
 	}
-	text(80, 95, 48, 750, "POLYMARKET", true)
+	text(80, 95, 48, 750, brand, true)
 	text(1080, 90, 32, 710, now.Format("Mon, Jan 2, 2006 · 3:04 PM MST"), false)
 	rect(80, 128, 1792, 131, 0)
 	if fetchErr != nil {
@@ -306,7 +310,7 @@ func renderPolymarket(event polyEvent, now time.Time, fetchErr error) ([]byte, e
 		text(80, 525, 34, 1700, "This slide will retry on its next display. No old prices are shown.", false)
 	} else {
 		// Two bounded title lines, keeping the large odds area readable on e-ink.
-		words := strings.Fields(event.Title)
+		words := strings.Fields(title)
 		line := ""
 		y := 225
 		for _, word := range words {
@@ -326,12 +330,11 @@ func renderPolymarket(event polyEvent, now time.Time, fetchErr error) ([]byte, e
 		if line != "" && y <= 289 {
 			text(80, y, 50, 1700, line, true)
 		}
-		rows := polyRows(event)
 		count := len(rows)
 		if count > 6 {
 			rows = rows[:6]
 		}
-		text(80, 350, 27, 1700, fmt.Sprintf("OUTCOME PRICES · %d OF %d SHOWN · OPEN MARKETS FIRST, THEN HIGHEST PRICE", len(rows), count), true)
+		text(80, 350, 27, 1700, fmt.Sprintf("%s · %d OF %d SHOWN · OPEN MARKETS FIRST, THEN HIGHEST PRICE", priceLabel, len(rows), count), true)
 		if count == 0 {
 			text(80, 540, 50, 1700, "No outcome data available", true)
 		}
@@ -350,7 +353,7 @@ func renderPolymarket(event polyEvent, now time.Time, fetchErr error) ([]byte, e
 			text(1400, top+95, 23, 380, row.status, false)
 		}
 	}
-	text(80, 1280, 25, 1700, "Source: Polymarket Gamma API · Fetched "+now.Format("Jan 2, 3:04 PM MST"), false)
+	text(80, 1280, 25, 1700, "Source: "+source+" · Fetched "+now.Format("Jan 2, 3:04 PM MST"), false)
 	if fetchErr != nil {
 		rect(80, 1245, 1792, 1295, 255)
 	}

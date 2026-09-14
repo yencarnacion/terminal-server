@@ -17,6 +17,7 @@ import (
 
 type configuration struct {
 	RSSURL           string   `yaml:"rss_url"`
+	KalshiPages      []string `yaml:"kalshi_pages"`
 	PolymarketPages  []string `yaml:"polymarket_pages"`
 	SlideOrder       []string `yaml:"slide_order"`
 	Listen           string   `yaml:"listen"`
@@ -34,7 +35,7 @@ type configuration struct {
 }
 
 func defaultConfiguration() configuration {
-	return configuration{RSSURL: defaultRSSURL, PolymarketPages: []string{"https://polymarket.com/event/what-price-will-bitcoin-hit-before-2027", "https://polymarket.com/event/which-party-will-win-the-house-in-2026", "https://polymarket.com/event/which-party-will-win-the-senate-in-2026"}, SlideOrder: []string{"rss", "weather", "calendar", "quarter", "quote", "newspapers", "polymarket"}, Listen: ":8177", BaseURL: "http://10.17.17.90:8177", SlideSeconds: 60, Screen: "slideshow", Timezone: "America/New_York", DataDir: "./data", FrontpagesURL: "http://10.17.17.90:8100", WeatherEnabled: true, WeatherLocation: "San Juan, PR", WeatherLatitude: 18.4655, WeatherLongitude: -66.1057}
+	return configuration{RSSURL: defaultRSSURL, KalshiPages: defaultKalshiPages(), PolymarketPages: []string{"https://polymarket.com/event/what-price-will-bitcoin-hit-before-2027", "https://polymarket.com/event/which-party-will-win-the-house-in-2026", "https://polymarket.com/event/which-party-will-win-the-senate-in-2026"}, SlideOrder: []string{"rss", "weather", "calendar", "quarter", "quote", "newspapers", "polymarket", "kalshi"}, Listen: ":8177", BaseURL: "http://10.17.17.90:8177", SlideSeconds: 60, Screen: "slideshow", Timezone: "America/New_York", DataDir: "./data", FrontpagesURL: "http://10.17.17.90:8100", WeatherEnabled: true, WeatherLocation: "San Juan, PR", WeatherLatitude: 18.4655, WeatherLongitude: -66.1057}
 }
 
 // Precedence: built-in defaults < YAML values < explicitly supplied CLI flags.
@@ -114,7 +115,7 @@ func (c configuration) validate() error {
 	seen := map[string]bool{}
 	for _, name := range c.SlideOrder {
 		switch name {
-		case "rss", "weather", "calendar", "quarter", "quote", "newspapers", "polymarket":
+		case "rss", "weather", "calendar", "quarter", "quote", "newspapers", "polymarket", "kalshi":
 		default:
 			return fmt.Errorf("unknown slide_order entry %q", name)
 		}
@@ -125,6 +126,9 @@ func (c configuration) validate() error {
 	}
 	if c.SlideSeconds < 60 {
 		return fmt.Errorf("slide_seconds / --refresh must be at least 60 seconds")
+	}
+	if _, err := newKalshi(c.KalshiPages); err != nil {
+		return err
 	}
 	if len(c.PolymarketPages) > 3 {
 		return fmt.Errorf("polymarket_pages supports up to three URLs")
