@@ -193,17 +193,19 @@ func (f *frontpages) run(ctx context.Context) {
 	}
 }
 
-func coverSourceRect(bounds image.Rectangle, paperID string) image.Rectangle {
-	if paperID == "ny_nyt-The_New_York_Times" {
-		// The NYT source is a spread: show its upper-right quadrant like
-		// a folded newspaper on a newsstand, enlarging masthead/headlines.
-		return image.Rect(bounds.Min.X+bounds.Dx()/2, bounds.Min.Y, bounds.Max.X, bounds.Min.Y+bounds.Dy()/2)
+// Newspaper sources can switch between portrait pages and landscape spreads
+// between editions. Choose the crop from this image, never the newspaper name.
+func coverSourceRect(bounds image.Rectangle) image.Rectangle {
+	if bounds.Empty() {
+		return bounds
 	}
-	if paperID == "wsj-The_Wall_Street_Journal" || paperID == "ca_sfc-San_Francisco_Chronicle" {
-		// Enlarge the masthead and lead stories, preserving the full page width.
-		return image.Rect(bounds.Min.X, bounds.Min.Y, bounds.Max.X, bounds.Min.Y+bounds.Dy()/2)
+	crop := bounds
+	crop.Max.Y = bounds.Min.Y + (bounds.Dy()+1)/2
+	if bounds.Dx() >= bounds.Dy() {
+		// A spread has two pages side by side; keep the existing newsstand zoom.
+		crop.Min.X = bounds.Min.X + bounds.Dx()/2
 	}
-	return bounds
+	return crop
 }
 
 func renderCover(raw []byte, paperID, name, date string) ([]byte, error) {
@@ -218,7 +220,7 @@ func renderCover(raw []byte, paperID, name, date string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	sourceRect := coverSourceRect(source.Bounds(), paperID)
+	sourceRect := coverSourceRect(source.Bounds())
 	if sourceRect.Empty() {
 		return nil, fmt.Errorf("cover crop is empty")
 	}

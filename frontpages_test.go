@@ -191,58 +191,69 @@ func TestFrontpagesBoundaries(t *testing.T) {
 	}
 }
 
-func TestNYTNewsstandCrop(t *testing.T) {
-	const nyt = "ny_nyt-The_New_York_Times"
-	bounds := image.Rect(10, 20, 91, 141)
-	if got := coverSourceRect(bounds, nyt); got != image.Rect(50, 20, 91, 80) {
-		t.Fatal(got)
-	}
-	if got := coverSourceRect(bounds, "pr_end-El_Nuevo_Dia"); got != bounds {
-		t.Fatal("El Nuevo Día was cropped", got)
-	}
-	for _, id := range []string{"wsj-The_Wall_Street_Journal", "ca_sfc-San_Francisco_Chronicle"} {
-		if got := coverSourceRect(bounds, id); got != image.Rect(10, 20, 91, 80) {
-			t.Fatalf("%s upper-half crop: %v", id, got)
-		}
-	}
-	fixture := image.NewGray(image.Rect(0, 0, 80, 120))
-	for y := 0; y < 120; y++ {
-		for x := 0; x < 80; x++ {
-			v := uint8(34)
-			if x >= 40 {
-				v = 85
-			}
-			if y >= 60 {
-				v += 102
-			}
-			fixture.SetGray(x, y, color.Gray{Y: v})
-		}
-	}
-	var raw bytes.Buffer
-	if err := png.Encode(&raw, fixture); err != nil {
-		t.Fatal(err)
-	}
+func TestCoverFormatCrop(t *testing.T) {
 	for _, tc := range []struct {
-		id     string
-		values []uint32
+		name         string
+		bounds, want image.Rectangle
 	}{
-		{nyt, []uint32{85, 85, 85, 85}},
-		{"wsj-The_Wall_Street_Journal", []uint32{34, 85, 34, 85}},
-		{"ca_sfc-San_Francisco_Chronicle", []uint32{34, 85, 34, 85}},
-		{"pr_end-El_Nuevo_Dia", []uint32{34, 85, 136, 187}},
+		{"current portrait", image.Rect(0, 0, 1542, 2958), image.Rect(0, 0, 1542, 1479)},
+		{"previous spread", image.Rect(0, 0, 1542, 1479), image.Rect(771, 0, 1542, 740)},
+		{"offset portrait", image.Rect(10, 20, 91, 141), image.Rect(10, 20, 91, 81)},
+		{"offset spread", image.Rect(10, 20, 131, 101), image.Rect(70, 20, 131, 61)},
+		{"square spread", image.Rect(0, 0, 100, 100), image.Rect(50, 0, 100, 50)},
+		{"tiny", image.Rect(0, 0, 1, 1), image.Rect(0, 0, 1, 1)},
+		{"empty", image.Rectangle{}, image.Rectangle{}},
 	} {
-		data, err := renderCover(raw.Bytes(), tc.id, "Paper", "2026-09-12")
-		if err != nil {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := coverSourceRect(tc.bounds); got != tc.want {
+				t.Fatalf("crop = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestNewspaperFormatsRender(t *testing.T) {
+	// Distinct quadrants reveal whether the renderer retained the full top half
+	// or only the spread's upper-right page, independent of newspaper identity.
+	for _, size := range []image.Point{{80, 120}, {160, 120}} {
+		fixture := image.NewGray(image.Rectangle{Max: size})
+		for y := 0; y < size.Y; y++ {
+			for x := 0; x < size.X; x++ {
+				v := uint8(34)
+				if x >= size.X/2 {
+					v = 85
+				}
+				if y >= size.Y/2 {
+					v += 102
+				}
+				fixture.SetGray(x, y, color.Gray{Y: v})
+			}
+		}
+		var raw bytes.Buffer
+		if err := png.Encode(&raw, fixture); err != nil {
 			t.Fatal(err)
 		}
-		img, err := png.Decode(bytes.NewReader(data))
-		if err != nil {
-			t.Fatal(err)
-		}
-		for i, p := range []image.Point{{700, 400}, {1100, 400}, {700, 1000}, {1100, 1000}} {
-			r, _, _, _ := img.At(p.X, p.Y).RGBA()
-			if r != tc.values[i]*257 {
-				t.Fatalf("%s point %v = %d", tc.id, p, r)
+		for _, id := range []string{"ny_nyt-The_New_York_Times", "wsj-The_Wall_Street_Journal", "ca_sfc-San_Francisco_Chronicle", "pr_end-El_Nuevo_Dia", "new-paper"} {
+			data, err := renderCover(raw.Bytes(), id, "Paper", "2026-09-13")
+			if err != nil {
+				t.Fatal(err)
+			}
+			img, err := png.Decode(bytes.NewReader(data))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if img.Bounds() != image.Rect(0, 0, width, height) || data[24] != 4 || data[25] != 3 {
+				t.Fatal("invalid device PNG")
+			}
+			for _, p := range []image.Point{{700, 400}, {1100, 400}, {700, 1000}, {1100, 1000}} {
+				want := uint32(85)
+				if size.X < size.Y && p.X < width/2 {
+					want = 34
+				}
+				r, _, _, _ := img.At(p.X, p.Y).RGBA()
+				if r != want*257 {
+					t.Fatalf("%s %v at %v = %d, want %d", id, size, p, r, want*257)
+				}
 			}
 		}
 	}
