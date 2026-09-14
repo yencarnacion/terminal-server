@@ -30,7 +30,7 @@ The default is `--screen slideshow --refresh 60`. Each successful device display
 
 `rss_url` in `config.yaml` defaults to `http://10.17.17.98:8090/up2date/rss.xml`; set it to an empty string to disable news. The `rss` slide is first in the default order. The feed is checked at startup and every minute; empty, malformed, or unavailable feeds are skipped automatically and reappear after recovery.
 
-Headlines use the same embedded monospace font at the quote renderer's largest size (64 points). Each item has a prominent QR code for its article URL, with a white quiet zone and crisp integer-sized modules. Only complete rows that fit are shown, in feed order; headlines and QR codes are never shrunk to squeeze in more items. Items without usable HTTP(S) links, or with URLs too dense for a scannable code, are skipped. News is rendered from the latest successful poll without an image cache.
+Headlines use the same embedded monospace font at the quote renderer's largest size (64 points), spanning the full content width with no side QR codes. A single enlarged QR code (up to 560 pixels, with a white quiet zone and crisp integer-sized modules) is centered in the bottom area and links to the first displayed headline. Only complete headlines that fit above that area are shown, in feed order. Items without usable HTTP(S) links are skipped; a URL too dense for the bottom QR shows a link-unavailable label without hiding the headlines. News is rendered from the latest successful poll without an image cache.
 
 Preview with `/preview?screen=rss`, or use `screen: rss` for news only. The direct preview shows an empty-state message when news is unavailable. Restart after changing configuration.
 

@@ -76,14 +76,21 @@ func TestNewsLayoutAndImage(t *testing.T) {
 		t.Fatal("incorrect item limit", len(rows))
 	}
 	for _, row := range rows {
-		if row.y+row.h > height-140 || row.qr.Bounds().Dx() < 300 {
-			t.Fatal("clipping or undersized QR", row)
+		if row.y+row.h > newsTextBottom {
+			t.Fatal("headline enters bottom QR area", row)
 		}
 		for _, line := range row.lines {
-			if font.MeasureString(face, line).Ceil() > width-580 {
-				t.Fatal("text overlaps QR")
+			if font.MeasureString(face, line).Ceil() > newsTextWidth {
+				t.Fatal("text exceeds headline width")
 			}
 		}
+	}
+	if len(rows[0].lines[0]) <= (width-580)/font.MeasureString(face, "M").Ceil() {
+		t.Fatal("headlines still reserve a side QR column")
+	}
+	qr, err := newsQR(items[0].Link)
+	if err != nil || qr.Bounds().Dx() < 500 || qr.Bounds().Dx() > newsQRSize {
+		t.Fatal("bottom QR is not enlarged", err)
 	}
 	n := &newsService{items: items}
 	raw, err := n.render()
@@ -96,6 +103,18 @@ func TestNewsLayoutAndImage(t *testing.T) {
 	}
 	if img.Bounds().Dx() != width || img.Bounds().Dy() != height {
 		t.Fatal(img.Bounds())
+	}
+	// The bottom contains exactly the first article's enlarged QR.
+	x := (width - qr.Bounds().Dx()) / 2
+	y := newsQRTop + (newsQRSize-qr.Bounds().Dy())/2
+	for py := 0; py < qr.Bounds().Dy(); py++ {
+		for px := 0; px < qr.Bounds().Dx(); px++ {
+			got, _, _, _ := img.At(x+px, y+py).RGBA()
+			want, _, _, _ := qr.At(px, py).RGBA()
+			if got != want {
+				t.Fatalf("bottom QR mismatch at %d,%d", px, py)
+			}
+		}
 	}
 	if _, err = newsQR("https://example.com/" + strings.Repeat("x", 3000)); err == nil {
 		t.Fatal("accepted overly dense QR")

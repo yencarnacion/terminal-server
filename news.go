@@ -99,9 +99,6 @@ func (n *newsService) refresh(ctx context.Context) (err error) {
 		if !validNewsURL(item.Link) {
 			continue
 		}
-		if _, err := newsQR(item.Link); err != nil {
-			continue
-		}
 		items = append(items, item)
 		if len(items) == 100 {
 			break
@@ -126,42 +123,44 @@ func (n *newsService) run(ctx context.Context) {
 }
 
 // Integer module scaling and the encoder's four-module quiet zone keep QR
-// edges crisp on the e-ink panel. Never squeeze a dense code to fit a row.
+// edges crisp on the e-ink panel in the large bottom QR area.
 func newsQR(link string) (image.Image, error) {
 	code, err := qrcode.New(link, qrcode.Medium)
 	if err != nil {
 		return nil, err
 	}
 	modules := len(code.Bitmap())
-	scale := 360 / modules
+	scale := newsQRSize / modules
 	if scale < 4 {
 		return nil, fmt.Errorf("article URL too dense for display QR")
 	}
 	return code.Image(modules * scale), nil
 }
 
+const (
+	newsQRSize     = 560
+	newsQRTop      = 760
+	newsTextBottom = 680
+	newsTextWidth  = width - 180
+)
+
 type newsRow struct {
 	lines []string
-	qr    image.Image
 	y, h  int
 }
 
 func layoutNews(items []newsItem, face font.Face) []newsRow {
-	const top, bottom, textWidth = 160, height - 140, width - 180 - 400
+	const top = 160
 	cell := font.MeasureString(face, "M").Ceil()
 	y := top
 	var rows []newsRow
 	for _, item := range items {
-		qr, err := newsQR(item.Link)
-		if err != nil {
-			continue
-		}
-		lines := wrap(item.Title, textWidth/cell)
-		h := max(len(lines)*80, 360)
-		if y+h > bottom {
+		lines := wrap(item.Title, newsTextWidth/cell)
+		h := len(lines) * 80
+		if y+h > newsTextBottom {
 			break
 		}
-		rows = append(rows, newsRow{lines: lines, qr: qr, y: y, h: h})
+		rows = append(rows, newsRow{lines: lines, y: y, h: h})
 		y += h + 32
 	}
 	return rows
@@ -185,9 +184,10 @@ func (n *newsService) render() ([]byte, error) {
 	img := image.NewGray(image.Rect(0, 0, width, height))
 	draw.Draw(img, img.Bounds(), image.White, image.Point{}, draw.Src)
 	d := font.Drawer{Dst: img, Src: image.Black, Face: small, Dot: fixed.P(90, 100)}
-	d.DrawString("TOP NEWS / SCAN TO READ")
+	d.DrawString("TOP NEWS")
 	draw.Draw(img, image.Rect(90, 126, width-90, 128), image.Black, image.Point{}, draw.Src)
-	rows := layoutNews(n.snapshot(), face)
+	items := n.snapshot()
+	rows := layoutNews(items, face)
 	d.Face = face
 	if len(rows) == 0 {
 		d.Dot = fixed.P(90, 260)
@@ -200,9 +200,21 @@ func (n *newsService) render() ([]byte, error) {
 			d.DrawString(line)
 			y += 80
 		}
-		x := width - 90 - 360 + (360-row.qr.Bounds().Dx())/2
-		y = row.y + (row.h-row.qr.Bounds().Dy())/2
-		draw.Draw(img, image.Rect(x, y, x+row.qr.Bounds().Dx(), y+row.qr.Bounds().Dy()), row.qr, image.Point{}, draw.Src)
 	}
+	if len(rows) > 0 {
+		qr, err := newsQR(items[0].Link)
+		d.Face = small
+		label := "SCAN TO READ THE FIRST HEADLINE"
+		if err != nil {
+			label = "FIRST HEADLINE LINK UNAVAILABLE"
+		} else {
+			x := (width - qr.Bounds().Dx()) / 2
+			y := newsQRTop + (newsQRSize-qr.Bounds().Dy())/2
+			draw.Draw(img, image.Rect(x, y, x+qr.Bounds().Dx(), y+qr.Bounds().Dy()), qr, qr.Bounds().Min, draw.Src)
+		}
+		d.Dot = fixed.P((width-font.MeasureString(small, label).Ceil())/2, newsQRTop-24)
+		d.DrawString(label)
+	}
+
 	return encodeGrayPNG(img)
 }
