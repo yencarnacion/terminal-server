@@ -139,8 +139,8 @@ func newsQR(link string) (image.Image, error) {
 
 const (
 	newsQRSize     = 560
-	newsQRTop      = 760
-	newsTextBottom = 680
+	newsQRTop      = 780
+	newsTextBottom = 740
 	newsTextWidth  = width - 180
 )
 
@@ -150,19 +150,25 @@ type newsRow struct {
 }
 
 func layoutNews(items []newsItem, face font.Face) []newsRow {
-	const top = 160
-	cell := font.MeasureString(face, "M").Ceil()
-	y := top
+	const top, rowHeight, gap = 160, 180, 20
+	columns := newsTextWidth / font.MeasureString(face, "M").Ceil()
 	var rows []newsRow
-	for _, item := range items {
-		lines := wrap(item.Title, newsTextWidth/cell)
-		h := len(lines) * 80
-		if y+h > newsTextBottom {
+	for i, item := range items {
+		if i == 3 {
 			break
 		}
-		rows = append(rows, newsRow{lines: lines, y: y, h: h})
-		y += h + 32
+		lines := wrap(item.Title, columns)
+		if len(lines) > 2 {
+			lines = lines[:2]
+			last := []rune(lines[1])
+			if len(last) >= columns {
+				last = last[:columns-1]
+			}
+			lines[1] = strings.TrimSpace(string(last)) + "…"
+		}
+		rows = append(rows, newsRow{lines: lines, y: top + i*(rowHeight+gap), h: rowHeight})
 	}
+
 	return rows
 }
 
@@ -171,7 +177,7 @@ func (n *newsService) render() ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	face, err := opentype.NewFace(tf, &opentype.FaceOptions{Size: 64, DPI: 72, Hinting: font.HintingFull})
+	face, err := opentype.NewFace(tf, &opentype.FaceOptions{Size: 56, DPI: 72, Hinting: font.HintingFull})
 	if err != nil {
 		return nil, err
 	}
@@ -193,27 +199,25 @@ func (n *newsService) render() ([]byte, error) {
 		d.Dot = fixed.P(90, 260)
 		d.DrawString("No news available yet.")
 	}
-	for _, row := range rows {
-		y := row.y + (row.h-len(row.lines)*80)/2 + 64
+	for i, row := range rows {
+		if i > 0 {
+			draw.Draw(img, image.Rect(90, row.y-10, width-90, row.y-8), image.Black, image.Point{}, draw.Src)
+		}
+		y := row.y + (row.h-len(row.lines)*70)/2 + 56
 		for _, line := range row.lines {
 			d.Dot = fixed.P(90, y)
 			d.DrawString(line)
-			y += 80
+			y += 70
 		}
 	}
 	if len(rows) > 0 {
 		qr, err := newsQR(items[0].Link)
-		d.Face = small
-		label := "SCAN TO READ THE FIRST HEADLINE"
-		if err != nil {
-			label = "FIRST HEADLINE LINK UNAVAILABLE"
-		} else {
+		if err == nil {
 			x := (width - qr.Bounds().Dx()) / 2
 			y := newsQRTop + (newsQRSize-qr.Bounds().Dy())/2
 			draw.Draw(img, image.Rect(x, y, x+qr.Bounds().Dx(), y+qr.Bounds().Dy()), qr, qr.Bounds().Min, draw.Src)
 		}
-		d.Dot = fixed.P((width-font.MeasureString(small, label).Ceil())/2, newsQRTop-24)
-		d.DrawString(label)
+
 	}
 
 	return encodeGrayPNG(img)

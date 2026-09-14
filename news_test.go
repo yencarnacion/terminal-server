@@ -62,7 +62,7 @@ func TestNewsAvailabilityAndRecovery(t *testing.T) {
 
 func TestNewsLayoutAndImage(t *testing.T) {
 	tf, _ := opentype.Parse(gomono.TTF)
-	face, err := opentype.NewFace(tf, &opentype.FaceOptions{Size: 64, DPI: 72, Hinting: font.HintingFull})
+	face, err := opentype.NewFace(tf, &opentype.FaceOptions{Size: 56, DPI: 72, Hinting: font.HintingFull})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,7 +72,7 @@ func TestNewsLayoutAndImage(t *testing.T) {
 		items[i] = newsItem{Title: "A large headline with enough words to wrap across lines", Link: "https://example.com/article"}
 	}
 	rows := layoutNews(items, face)
-	if len(rows) == 0 || len(rows) >= len(items) {
+	if len(rows) != 3 {
 		t.Fatal("incorrect item limit", len(rows))
 	}
 	for _, row := range rows {
@@ -87,6 +87,10 @@ func TestNewsLayoutAndImage(t *testing.T) {
 	}
 	if len(rows[0].lines[0]) <= (width-580)/font.MeasureString(face, "M").Ceil() {
 		t.Fatal("headlines still reserve a side QR column")
+	}
+	longRows := layoutNews([]newsItem{{Title: strings.Repeat("Long headline ", 40)}, {Title: "Second"}, {Title: "Third"}}, face)
+	if len(longRows) != 3 || len(longRows[0].lines) != 2 || !strings.HasSuffix(longRows[0].lines[1], "…") {
+		t.Fatal("long first headline displaced later headlines", longRows)
 	}
 	qr, err := newsQR(items[0].Link)
 	if err != nil || qr.Bounds().Dx() < 500 || qr.Bounds().Dx() > newsQRSize {
