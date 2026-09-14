@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -24,8 +25,9 @@ import (
 const defaultRSSURL = "http://10.17.17.98:8090/up2date/rss.xml"
 
 type newsItem struct {
-	Title string `xml:"title"`
-	Link  string `xml:"link"`
+	Title   string `xml:"title"`
+	Link    string `xml:"link"`
+	PubDate string `xml:"pubDate"`
 }
 type newsService struct {
 	url    string
@@ -100,9 +102,30 @@ func (n *newsService) refresh(ctx context.Context) (err error) {
 			continue
 		}
 		items = append(items, item)
-		if len(items) == 100 {
+	}
+	// Prefer publication time when the feed supplies valid dates for every item;
+	// otherwise preserve the publisher's ordering.
+	dates := make(map[string]time.Time)
+	allDated := true
+	for _, item := range items {
+		var stamp time.Time
+		for _, format := range []string{time.RFC1123Z, time.RFC1123, time.RFC822Z, time.RFC822, time.RFC3339} {
+			if parsed, err := time.Parse(format, item.PubDate); err == nil {
+				stamp = parsed
+				break
+			}
+		}
+		if stamp.IsZero() {
+			allDated = false
 			break
 		}
+		dates[item.PubDate] = stamp
+	}
+	if allDated {
+		sort.SliceStable(items, func(i, j int) bool { return dates[items[i].PubDate].After(dates[items[j].PubDate]) })
+	}
+	if len(items) > 10 {
+		items = items[:10]
 	}
 	return nil
 }
@@ -172,7 +195,43 @@ func layoutNews(items []newsItem, face font.Face) []newsRow {
 	return rows
 }
 
-func (n *newsService) render() ([]byte, error) {
+func newsPageMode(page int) string {
+	if page == 0 {
+		return "rss"
+	}
+	return fmt.Sprintf("rss-%d", page+1)
+}
+
+func newsModePage(mode string) (int, bool) {
+	for page := 0; page < 4; page++ {
+		if mode == newsPageMode(page) {
+			return page, true
+		}
+	}
+	return 0, false
+}
+
+func (n *newsService) pages() []string {
+	count := (min(len(n.snapshot()), 10) + 2) / 3
+	var pages []string
+	for page := 0; page < count; page++ {
+		pages = append(pages, newsPageMode(page))
+	}
+	return pages
+}
+
+func newsPageItems(items []newsItem, page int) []newsItem {
+	count := min(len(items), 10)
+	start := page * 3
+	if page < 0 || start >= count {
+		return nil
+	}
+	return items[start:min(start+3, count)]
+}
+
+func (n *newsService) render() ([]byte, error) { return n.renderPage(0) }
+
+func (n *newsService) renderPage(page int) ([]byte, error) {
 	tf, err := opentype.Parse(gomono.TTF)
 	if err != nil {
 		return nil, err
@@ -190,9 +249,9 @@ func (n *newsService) render() ([]byte, error) {
 	img := image.NewGray(image.Rect(0, 0, width, height))
 	draw.Draw(img, img.Bounds(), image.White, image.Point{}, draw.Src)
 	d := font.Drawer{Dst: img, Src: image.Black, Face: small, Dot: fixed.P(90, 100)}
-	d.DrawString("TOP NEWS")
+	d.DrawString(fmt.Sprintf("TOP NEWS / %d", page+1))
 	draw.Draw(img, image.Rect(90, 126, width-90, 128), image.Black, image.Point{}, draw.Src)
-	items := n.snapshot()
+	items := newsPageItems(n.snapshot(), page)
 	rows := layoutNews(items, face)
 	d.Face = face
 	if len(rows) == 0 {

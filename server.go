@@ -137,10 +137,20 @@ func (a *app) imageContext(ctx context.Context, id string) ([]byte, error) {
 		if err != nil || a.news == nil {
 			return nil, os.ErrNotExist
 		}
-		if _, err := time.Parse("20060102T1504Z", strings.TrimPrefix(base, "rss-")); err != nil {
+		suffix := strings.TrimPrefix(base, "rss-")
+		mode := "rss"
+		if number, stamp, ok := strings.Cut(suffix, "-"); ok {
+			mode = "rss-" + number
+			suffix = stamp
+		}
+		page, ok := newsModePage(mode)
+		if !ok {
 			return nil, os.ErrNotExist
 		}
-		data, err := a.news.render()
+		if _, err := time.Parse("20060102T1504Z", suffix); err != nil {
+			return nil, os.ErrNotExist
+		}
+		data, err := a.news.renderPage(page)
 		if err != nil {
 			return nil, err
 		}
@@ -248,7 +258,10 @@ func (a *app) screenID(mode string, now time.Time) (string, error) {
 	if strings.HasPrefix(mode, "cover-") || strings.HasPrefix(mode, "poly-") || strings.HasPrefix(mode, "kalshi-") {
 		return fmt.Sprintf("%s-%d", mode, now.UnixNano()), nil
 	}
-	if mode == "rss" || mode == "calendar" || mode == "quarter" || mode == "weather" {
+	if _, ok := newsModePage(mode); ok {
+		return mode + "-" + now.UTC().Format("20060102T1504Z"), nil
+	}
+	if mode == "calendar" || mode == "quarter" || mode == "weather" {
 		return mode + "-" + now.UTC().Format("20060102T1504Z"), nil
 	}
 	return a.randomID()
@@ -263,9 +276,7 @@ func (a *app) playlist() []string {
 	for _, name := range order {
 		switch name {
 		case "rss":
-			if len(a.news.snapshot()) > 0 {
-				slides = append(slides, "rss")
-			}
+			slides = append(slides, a.news.pages()...)
 		case "weather":
 			if a.weather != nil {
 				slides = append(slides, "weather")
@@ -307,8 +318,14 @@ func (a *app) nextDisplay(r *http.Request) (string, error) {
 	}
 	mode := a.mode
 	playlist := a.playlist()
+	if mode == "rss" {
+		playlist = a.news.pages()
+		if len(playlist) == 0 {
+			playlist = []string{"rss"}
+		}
+	}
 	index := a.next[token] % len(playlist)
-	if mode == "slideshow" {
+	if mode == "slideshow" || mode == "rss" {
 		mode = playlist[index]
 	}
 	id, err := a.screenID(mode, a.now())
@@ -318,7 +335,7 @@ func (a *app) nextDisplay(r *http.Request) (string, error) {
 			_, err = a.image(id)
 		}
 	}
-	if err == nil && a.mode == "slideshow" {
+	if err == nil && (a.mode == "slideshow" || a.mode == "rss") {
 		if len(a.next) >= 256 {
 			if _, ok := a.next[token]; !ok {
 				a.next = map[string]int{}
@@ -415,6 +432,9 @@ func (a *app) routes() http.Handler {
 		links := ""
 		if a.news != nil {
 			links += `<a href="/preview?screen=rss">Top News</a>`
+			for i, page := range a.news.pages() {
+				links += fmt.Sprintf(`<a href="/preview?screen=%s&page=%d">News %d</a>`, page, i+1, i+1)
+			}
 		}
 		if a.weather != nil {
 			links += `<a href="/preview?screen=weather">Weather</a>`
@@ -440,11 +460,18 @@ func (a *app) routes() http.Handler {
 				isCover = true
 			}
 		}
-		if !(mode == "rss" && a.news != nil) && mode != "slideshow" && mode != "calendar" && mode != "quarter" && mode != "cowsay" && !(mode == "weather" && a.weather != nil) && !isCover {
+		_, isNews := newsModePage(mode)
+		if !(isNews && a.news != nil) && mode != "slideshow" && mode != "calendar" && mode != "quarter" && mode != "cowsay" && !(mode == "weather" && a.weather != nil) && !isCover {
 			http.Error(w, "unknown screen", 400)
 			return
 		}
 		now := a.now()
+		if mode == "rss" && r.URL.Query().Get("page") == "" {
+			pages := a.news.pages()
+			if len(pages) > 0 {
+				mode = pages[now.Unix()/int64(a.refresh)%int64(len(pages))]
+			}
+		}
 		if mode == "slideshow" {
 			playlist := a.playlist()
 			mode = playlist[now.Unix()/int64(a.refresh)%int64(len(playlist))]

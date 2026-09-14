@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"image/png"
 	"io"
 	"net/http"
@@ -168,5 +169,105 @@ func TestNewsRoutes(t *testing.T) {
 	a.news.items = nil
 	if _, err := a.image(id); err != nil {
 		t.Fatal("feed disappearance breaks issued image", err)
+	}
+}
+
+func TestNewsPagination(t *testing.T) {
+	items := make([]newsItem, 12)
+	for i := range items {
+		items[i] = newsItem{Title: fmt.Sprintf("Headline %d", i+1), Link: fmt.Sprintf("https://example.com/story/%d", i+1)}
+	}
+	n := &newsService{items: items}
+	if got := n.pages(); !reflect.DeepEqual(got, []string{"rss", "rss-2", "rss-3", "rss-4"}) {
+		t.Fatal(got)
+	}
+	for page, want := range []int{3, 3, 3, 1} {
+		selected := newsPageItems(items, page)
+		if len(selected) != want || selected[0] != items[page*3] {
+			t.Fatal(page, selected)
+		}
+		raw, err := n.renderPage(page)
+		if err != nil {
+			t.Fatal(err)
+		}
+		img, err := png.Decode(bytes.NewReader(raw))
+		if err != nil {
+			t.Fatal(err)
+		}
+		qr, err := newsQR(items[page*3].Link)
+		if err != nil {
+			t.Fatal(err)
+		}
+		x := (width - qr.Bounds().Dx()) / 2
+		y := newsQRTop + (newsQRSize-qr.Bounds().Dy())/2
+		for py := 0; py < qr.Bounds().Dy(); py++ {
+			for px := 0; px < qr.Bounds().Dx(); px++ {
+				got, _, _, _ := img.At(x+px, y+py).RGBA()
+				want, _, _, _ := qr.At(px, py).RGBA()
+				if got != want {
+					t.Fatalf("page %d QR does not match its first item", page+1)
+				}
+			}
+		}
+	}
+	a, _ := newApp("http://example.com", 60, "slideshow", []string{"quote"}, make([]byte, 32))
+	a.news = n
+	a.slideOrder = []string{"rss", "quote"}
+	for _, mode := range []string{"slideshow", "rss"} {
+		a.mode = mode
+		a.next = map[string]int{}
+		for _, want := range []string{"rss", "rss-2", "rss-3", "rss-4"} {
+			id, err := a.nextDisplay(httptest.NewRequest("GET", "/api/display", nil))
+			expected, _ := a.screenID(want, a.now())
+			if err != nil || id != expected {
+				t.Fatal(mode, id, expected, err)
+			}
+			rec := httptest.NewRecorder()
+			a.routes().ServeHTTP(rec, httptest.NewRequest("GET", "/screens/"+id+".png", nil))
+			if rec.Code != 200 {
+				t.Fatal(rec.Code)
+			}
+		}
+	}
+	for _, mode := range n.pages() {
+		rec := httptest.NewRecorder()
+		a.routes().ServeHTTP(rec, httptest.NewRequest("GET", "/preview?screen="+mode+"&page=1", nil))
+		if rec.Code != 200 {
+			t.Fatal(mode, rec.Code)
+		}
+	}
+	if got := newsPageItems(items, 4); len(got) != 0 {
+		t.Fatal("more than ten items", got)
+	}
+	n.items = items[:4]
+	if len(n.pages()) != 2 || len(newsPageItems(n.snapshot(), 1)) != 1 {
+		t.Fatal("partial feed")
+	}
+	n.items = nil
+	if len(n.pages()) != 0 {
+		t.Fatal("empty feed")
+	}
+	for _, id := range []string{"rss-0-20260913T1200Z", "rss-5-20260913T1200Z", "rss-2-bad"} {
+		if _, err := a.image(id); err == nil {
+			t.Fatal("invalid ID", id)
+		}
+	}
+}
+
+func TestNewsLatestTen(t *testing.T) {
+	body := "<rss><channel>"
+	for i := 1; i <= 12; i++ {
+		body += fmt.Sprintf("<item><title>Story %d</title><link>https://example.com/%d</link><pubDate>2026-09-%02dT12:00:00Z</pubDate></item>", i, i, i)
+	}
+	body += "</channel></rss>"
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { io.WriteString(w, body) }))
+	defer upstream.Close()
+	n := newNews(upstream.URL)
+	if err := n.refresh(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	items := n.snapshot()
+	if len(items) != 10 || items[0].Title != "Story 12" || items[9].Title != "Story 3" {
+		t.Fatal(items)
 	}
 }
