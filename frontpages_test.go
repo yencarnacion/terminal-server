@@ -320,8 +320,13 @@ func TestCoverFormatCrop(t *testing.T) {
 		{"empty", image.Rectangle{}, image.Rectangle{}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := coverSourceRect(tc.bounds); got != tc.want {
+			if got := coverSourceRect(tc.bounds, false); got != tc.want {
 				t.Fatalf("crop = %v, want %v", got, tc.want)
+			}
+			fullWant := tc.want
+			fullWant.Max.Y = tc.bounds.Max.Y
+			if got := coverSourceRect(tc.bounds, true); got != fullWant {
+				t.Fatalf("full-page crop = %v, want %v", got, fullWant)
 			}
 		})
 	}
@@ -329,7 +334,7 @@ func TestCoverFormatCrop(t *testing.T) {
 
 func TestNewspaperFormatsRender(t *testing.T) {
 	// Distinct quadrants reveal whether the renderer retained the full top half
-	// or only the spread's upper-right page, independent of newspaper identity.
+	// or only the spread's upper-right quarter, with full page height for ENDI.
 	for _, size := range []image.Point{{80, 120}, {160, 120}} {
 		fixture := image.NewGray(image.Rectangle{Max: size})
 		for y := 0; y < size.Y; y++ {
@@ -348,7 +353,7 @@ func TestNewspaperFormatsRender(t *testing.T) {
 		if err := png.Encode(&raw, fixture); err != nil {
 			t.Fatal(err)
 		}
-		for _, id := range []string{"ny_nyt-The_New_York_Times", "wsj-The_Wall_Street_Journal", "ca_sfc-San_Francisco_Chronicle", "pr_end-El_Nuevo_Dia", "new-paper"} {
+		for _, id := range []string{"ny_nyt-The_New_York_Times", "wsj-The_Wall_Street_Journal", "ca_sfc-San_Francisco_Chronicle", "pr_end-El_Nuevo_Dia", "end", "endi", "new-paper"} {
 			data, err := renderCover(raw.Bytes(), id, "Paper", "2026-09-13")
 			if err != nil {
 				t.Fatal(err)
@@ -364,6 +369,9 @@ func TestNewspaperFormatsRender(t *testing.T) {
 				want := uint32(85)
 				if size.X < size.Y && p.X < width/2 {
 					want = 34
+				}
+				if (id == "pr_end-El_Nuevo_Dia" || id == "end" || id == "endi") && p.Y == 1000 {
+					want += 102
 				}
 				r, _, _, _ := img.At(p.X, p.Y).RGBA()
 				if r != want*257 {

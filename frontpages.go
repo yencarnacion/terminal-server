@@ -194,19 +194,27 @@ func (f *frontpages) run(ctx context.Context) {
 	}
 }
 
-// Newspaper sources can switch between portrait pages and landscape spreads
-// between editions. Choose the crop from this image, never the newspaper name.
-func coverSourceRect(bounds image.Rectangle) image.Rectangle {
+// Choose the page layout from each edition's dimensions. El Nuevo Día keeps
+// the full page height; other papers retain the upper-half newsstand zoom.
+func coverSourceRect(bounds image.Rectangle, fullPage bool) image.Rectangle {
 	if bounds.Empty() {
 		return bounds
 	}
 	crop := bounds
-	crop.Max.Y = bounds.Min.Y + (bounds.Dy()+1)/2
+	if !fullPage {
+		crop.Max.Y = bounds.Min.Y + (bounds.Dy()+1)/2
+	}
 	if bounds.Dx() >= bounds.Dy() {
 		// A spread has two pages side by side; keep the existing newsstand zoom.
 		crop.Min.X = bounds.Min.X + bounds.Dx()/2
 	}
 	return crop
+}
+
+func isElNuevoDia(paperID, name string) bool {
+	id := strings.ToLower(strings.TrimSpace(paperID))
+	return id == "end" || id == "endi" || id == "pr_end" || strings.HasPrefix(id, "pr_end-") ||
+		strings.EqualFold(strings.TrimSpace(name), "El Nuevo Día") || strings.EqualFold(strings.TrimSpace(name), "El Nuevo Dia")
 }
 
 func renderCover(raw []byte, paperID, name, date string) ([]byte, error) {
@@ -221,7 +229,7 @@ func renderCover(raw []byte, paperID, name, date string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	sourceRect := coverSourceRect(source.Bounds())
+	sourceRect := coverSourceRect(source.Bounds(), isElNuevoDia(paperID, name))
 	if sourceRect.Empty() {
 		return nil, fmt.Errorf("cover crop is empty")
 	}
