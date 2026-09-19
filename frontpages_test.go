@@ -152,8 +152,13 @@ func TestFrontpagesSlideshowLiveFetch(t *testing.T) {
 	}
 	broken = true
 	mu.Unlock()
-	if _, err = a.image(firstCoverID); err == nil {
-		t.Fatal("must not fall back to a stale cover during outage")
+	fallback, err := a.image(firstCoverID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantFallback, err := a.image(a.ids[0] + "~b78n")
+	if err != nil || !bytes.Equal(fallback, wantFallback) {
+		t.Fatal("outage must serve a fortune, never a stale cover")
 	}
 	mu.Lock()
 	catalogDown = true
@@ -188,6 +193,116 @@ func TestFrontpagesBoundaries(t *testing.T) {
 	}
 	if _, err = f.render(context.Background(), "cover-unknown"); err == nil {
 		t.Fatal("unknown paper accepted")
+	}
+}
+
+func TestFrontpages502Recovery(t *testing.T) {
+	for _, failingPath := range []string{"/api/newspapers", "/api/newspapers/nyt/today", "/cover.png"} {
+		t.Run(failingPath, func(t *testing.T) {
+			var raw bytes.Buffer
+			if err := png.Encode(&raw, image.NewGray(image.Rect(0, 0, 80, 120))); err != nil {
+				t.Fatal(err)
+			}
+			var mu sync.Mutex
+			broken := false
+			source := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				mu.Lock()
+				defer mu.Unlock()
+				if broken && r.URL.Path == failingPath {
+					http.Error(w, "bad gateway", http.StatusBadGateway)
+					return
+				}
+				switch r.URL.Path {
+				case "/api/newspapers":
+					json.NewEncoder(w).Encode([]newspaper{{ID: "nyt", Name: "New York Times"}})
+				case "/api/newspapers/nyt/today":
+					json.NewEncoder(w).Encode(coverMetadata{ID: "nyt", Date: "2026-09-19", ImageURL: "/cover.png"})
+				case "/cover.png":
+					w.Write(raw.Bytes())
+				default:
+					http.NotFound(w, r)
+				}
+			}))
+			defer source.Close()
+			f, err := newFrontpages(source.URL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := f.refresh(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			a, err := newApp("http://trmnl.local", 60, "slideshow", []string{"Keep going."}, bytes.Repeat([]byte{3}, 32))
+			if err != nil {
+				t.Fatal(err)
+			}
+			a.frontpages = f
+			a.slideOrder = []string{"newspapers", "calendar"}
+			h := a.routes()
+			display := func() string {
+				t.Helper()
+				r := httptest.NewRequest("GET", "/api/display", nil)
+				r.Header.Set("ACCESS_TOKEN", a.token("aa:bb:cc:dd:ee:01"))
+				r.Header.Set("PERCENT_CHARGED", "78")
+				w := httptest.NewRecorder()
+				h.ServeHTTP(w, r)
+				var response struct {
+					Filename string `json:"filename"`
+				}
+				if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil || w.Code != http.StatusOK {
+					t.Fatalf("display failed: %d %s", w.Code, w.Body.String())
+				}
+				return response.Filename
+			}
+			fetch := func(id string) []byte {
+				t.Helper()
+				w := httptest.NewRecorder()
+				h.ServeHTTP(w, httptest.NewRequest("GET", "/screens/"+id+".png", nil))
+				if w.Code != http.StatusOK || w.Header().Get("Content-Type") != "image/png" {
+					t.Fatalf("image failed: %d %s", w.Code, w.Body.String())
+				}
+				if strings.HasPrefix(id, "cover-") && !strings.Contains(w.Header().Get("Cache-Control"), "no-store") {
+					t.Fatal("cover or fallback may be cached")
+				}
+				if _, err := png.Decode(bytes.NewReader(w.Body.Bytes())); err != nil {
+					t.Fatal(err)
+				}
+				return w.Body.Bytes()
+			}
+			coverID := display()
+			before := fetch(coverID)
+			mu.Lock()
+			broken = true
+			mu.Unlock()
+			if failingPath == "/api/newspapers" {
+				if err := f.refresh(context.Background()); err == nil || len(f.snapshot()) != 1 {
+					t.Fatal("catalog outage must retain the playlist")
+				}
+			}
+			during := fetch(coverID)
+			if failingPath != "/api/newspapers" {
+				want := fetch(a.ids[0] + "~b78n")
+				if !bytes.Equal(during, want) || bytes.Equal(during, before) {
+					t.Fatal("expected fortune fallback with battery footer")
+				}
+			}
+			next := display()
+			if !strings.HasPrefix(next, "calendar-") {
+				t.Fatalf("slideshow did not advance: %s", next)
+			}
+			fetch(next)
+			mu.Lock()
+			broken = false
+			mu.Unlock()
+			if err := f.refresh(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			if after := fetch(coverID); !bytes.Equal(after, before) {
+				t.Fatal("same cover URL did not recover after upstream recovered")
+			}
+			if _, ok := a.cache[coverID]; ok {
+				t.Fatal("cover URL cached")
+			}
+		})
 	}
 }
 

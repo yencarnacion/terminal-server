@@ -205,7 +205,13 @@ func (a *app) imageContext(ctx context.Context, id string) ([]byte, error) {
 		defer cancel()
 		data, err := a.frontpages.render(bounded, base)
 		if err != nil {
-			return nil, err
+			if err == os.ErrNotExist || ctx.Err() != nil {
+				return nil, err
+			}
+			log.Printf("frontpages: %v; serving fortune fallback", err)
+			// Keep the image download successful so the device can continue its
+			// normal refresh cycle. Never retain a cover or fallback under this ID.
+			return a.imageContext(ctx, a.ids[0]+battery.suffix())
 		}
 		return addBatteryFooter(data, battery)
 	}

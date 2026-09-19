@@ -15,6 +15,7 @@ import (
 	"math"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -122,7 +123,7 @@ func (f *frontpages) render(ctx context.Context, id string) ([]byte, error) {
 		}
 	}
 	if paper.ID == "" {
-		return nil, fmt.Errorf("unknown newspaper")
+		return nil, os.ErrNotExist
 	}
 	data, err := f.get(ctx, "/api/newspapers/"+url.PathEscape(paper.PaperID)+"/today", 1<<20)
 	if err != nil {
