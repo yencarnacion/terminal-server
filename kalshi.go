@@ -21,6 +21,7 @@ const kalshiAPI = "https://api.elections.kalshi.com/trade-api/v2"
 
 func defaultKalshiPages() []string {
 	return []string{
+		"daily-direction",
 		"https://kalshi.com/markets/kxbtcy/btc-price-range-eoy/kxbtcy-27jan0100",
 		"https://kalshi.com/markets/kxbalancepowercombo/congress-balance-of-power-combo/kxbalancepowercombo-27feb",
 		"series:KXNETFLIXRANKMOVIE",
@@ -33,6 +34,9 @@ type kalshiPage struct{ ID, Event, Series, Label string }
 func parseKalshiPage(raw string) (kalshiPage, error) {
 	p := kalshiPage{}
 	raw = strings.TrimSpace(raw)
+	if raw == "daily-direction" {
+		return kalshiPage{ID: kalshiDirectionID, Label: "Kalshi Stock Direction"}, nil
+	}
 	if strings.HasPrefix(raw, "series:") {
 		p.Series = strings.ToUpper(strings.TrimPrefix(raw, "series:"))
 		if !polySlug.MatchString(p.Series) || len(p.Series) > 100 {
@@ -82,8 +86,8 @@ func newKalshi(raw []string) (*kalshiService, error) {
 		}
 		return nil
 	}}}
-	if len(raw) > 4 {
-		return nil, fmt.Errorf("kalshi_pages supports up to four entries")
+	if len(raw) > 5 {
+		return nil, fmt.Errorf("kalshi_pages supports up to five entries")
 	}
 	seen := map[string]bool{}
 	for _, s := range raw {
@@ -111,22 +115,27 @@ func (k *kalshiService) pages() []kalshiPage {
 }
 
 type kalshiMarket struct {
-	Ticker    string    `json:"ticker"`
-	Title     string    `json:"title"`
-	YesTitle  string    `json:"yes_sub_title"`
-	Status    string    `json:"status"`
-	Result    string    `json:"result"`
-	LastPrice string    `json:"last_price_dollars"`
-	Volume    string    `json:"volume_fp"`
-	OpenTime  time.Time `json:"open_time"`
-	CloseTime time.Time `json:"close_time"`
+	Ticker         string    `json:"ticker"`
+	Title          string    `json:"title"`
+	YesTitle       string    `json:"yes_sub_title"`
+	Status         string    `json:"status"`
+	Result         string    `json:"result"`
+	LastPrice      string    `json:"last_price_dollars"`
+	Volume         string    `json:"volume_fp"`
+	OpenTime       time.Time `json:"open_time"`
+	CloseTime      time.Time `json:"close_time"`
+	MarketType     string    `json:"market_type"`
+	StrikeType     string    `json:"strike_type"`
+	FloorStrike    *float64  `json:"floor_strike"`
+	OccurrenceTime time.Time `json:"occurrence_datetime"`
 }
 type kalshiEvent struct {
-	Ticker   string         `json:"event_ticker"`
-	Series   string         `json:"series_ticker"`
-	Title    string         `json:"title"`
-	Subtitle string         `json:"sub_title"`
-	Markets  []kalshiMarket `json:"markets"`
+	Ticker     string         `json:"event_ticker"`
+	Series     string         `json:"series_ticker"`
+	Title      string         `json:"title"`
+	Subtitle   string         `json:"sub_title"`
+	Markets    []kalshiMarket `json:"markets"`
+	StrikeDate time.Time      `json:"strike_date"`
 }
 
 func (k *kalshiService) get(ctx context.Context, path string, out any) error {
@@ -155,8 +164,8 @@ func (k *kalshiService) get(ctx context.Context, path string, out any) error {
 	return json.Unmarshal(data, out)
 }
 
-// The nearest closing event with an active market is the current tradable week.
-// Never fall back to a settled week when the next weekly event is not available.
+// The nearest closing event with an active market is the current tradable event.
+// Never fall back to a settled event when the next one is not available.
 func currentKalshiEvent(events []kalshiEvent, series string, now time.Time) (kalshiEvent, error) {
 	var selected kalshiEvent
 	var earliest time.Time
@@ -174,7 +183,7 @@ func currentKalshiEvent(events []kalshiEvent, series string, now time.Time) (kal
 		}
 	}
 	if earliest.IsZero() {
-		return selected, fmt.Errorf("no current open weekly Kalshi event")
+		return selected, fmt.Errorf("no current open Kalshi event")
 	}
 	return selected, nil
 }
@@ -202,6 +211,12 @@ func (k *kalshiService) fetch(ctx context.Context, p kalshiPage, now time.Time) 
 				return event, fmt.Errorf("too many Kalshi event pages")
 			}
 			query := url.Values{"series_ticker": {p.Series}, "status": {"open"}, "with_nested_markets": {"true"}, "limit": {"200"}}
+			if isKalshiDirectionSeries(p.Series) {
+				// Include next-day listings before trading opens, but bound the
+				// query to markets that have not closed instead of all history.
+				query.Del("status")
+				query.Set("min_close_ts", strconv.FormatInt(now.Unix(), 10))
+			}
 			if cursor != "" {
 				query.Set("cursor", cursor)
 			}
@@ -222,7 +237,11 @@ func (k *kalshiService) fetch(ctx context.Context, p kalshiPage, now time.Time) 
 			cursor = response.Cursor
 		}
 		var err error
-		event, err = currentKalshiEvent(events, p.Series, now)
+		if isKalshiDirectionSeries(p.Series) {
+			event, err = currentKalshiDirectionEvent(events, p.Series, now)
+		} else {
+			event, err = currentKalshiEvent(events, p.Series, now)
+		}
 		if err != nil {
 			return event, err
 		}
@@ -231,6 +250,15 @@ func (k *kalshiService) fetch(ctx context.Context, p kalshiPage, now time.Time) 
 		return event, fmt.Errorf("missing Kalshi event data")
 	}
 	return event, nil
+}
+
+func kalshiLastProbability(m kalshiMarket) *float64 {
+	value, err := strconv.ParseFloat(m.LastPrice, 64)
+	volume, volErr := strconv.ParseFloat(m.Volume, 64)
+	if err != nil || math.IsNaN(value) || math.IsInf(value, 0) || value < 0 || value > 1 || volErr != nil || math.IsNaN(volume) || math.IsInf(volume, 0) || volume <= 0 {
+		return nil
+	}
+	return &value
 }
 
 func kalshiRows(event kalshiEvent) []polyRow {
@@ -247,11 +275,7 @@ func kalshiRows(event kalshiEvent) []polyRow {
 		if m.Status == "active" {
 			row.status = "OPEN"
 		}
-		value, err := strconv.ParseFloat(m.LastPrice, 64)
-		volume, volErr := strconv.ParseFloat(m.Volume, 64)
-		if err == nil && !math.IsNaN(value) && !math.IsInf(value, 0) && value >= 0 && value <= 1 && volErr == nil && volume > 0 {
-			row.probability = &value
-		}
+		row.probability = kalshiLastProbability(m)
 		if m.Result == "yes" || m.Result == "no" {
 			result := 0.0
 			if m.Result == "yes" {
@@ -284,6 +308,9 @@ func (k *kalshiService) render(ctx context.Context, id string, now time.Time) ([
 		}
 		if _, err := strconv.ParseInt(strings.TrimPrefix(id, p.ID+"-"), 10, 64); err != nil {
 			return nil, os.ErrNotExist
+		}
+		if p.ID == kalshiDirectionID {
+			return renderKalshiDirections(k.fetchDirections(ctx, now), now)
 		}
 		event, err := k.fetch(ctx, p, now)
 		if err != nil {

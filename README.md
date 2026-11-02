@@ -128,21 +128,26 @@ Single-market pages show each outcome; multi-market events show the Yes price fo
 
 ## Kalshi pages
 
-Four Kalshi slides follow Polymarket: Bitcoin's end-of-2026 price range, Congress balance of power, the top US Netflix movie, and the #2 US Netflix show. They share the prediction-market layout, date/time, battery footer, and configured slide duration (300 seconds in the checked-in configuration). Each has a browser preview link.
+Five Kalshi slides follow Polymarket. The first combines **Nasdaq-100 and S&P 500 daily direction** on one screen, followed by Bitcoin's end-of-2026 price range, Congress balance of power, the top US Netflix movie, and the #2 US Netflix show. Each has a browser preview link, battery footer, and configured slide duration (300 seconds in the checked-in configuration).
 
 ```yaml
 kalshi_pages:
+  - "daily-direction"
   - "https://kalshi.com/markets/kxbtcy/btc-price-range-eoy/kxbtcy-27jan0100"
   - "https://kalshi.com/markets/kxbalancepowercombo/congress-balance-of-power-combo/kxbalancepowercombo-27feb"
   - "series:KXNETFLIXRANKMOVIE"
   - "series:KXNETFLIXRANKSHOWRUNNERUP"
 ```
 
-Event URLs select fixed events. A `series:TICKER` entry discovers open events on every display and selects the nearest closing event with an active, already-open market. The Netflix slides therefore roll forward automatically each week; the event subtitle identifies the chart publication date. When no open week is available, the slide displays an unavailable message and retries next time. It does not reuse a settled week's prices. Up to four entries are supported; blanks are skipped and duplicates rejected. Use `kalshi_pages: []` or omit `kalshi` from `slide_order` to disable them.
+The `daily-direction` entry uses the [Nasdaq-100 daily direction](https://kalshi.com/markets/kxnasdaqdud/nasdaqdud/kxnasdaqdud-26nov02h1600) and [S&P 500 daily direction](https://kalshi.com/markets/kxinxdud) series. Preview it at `/preview?screen=kalshi-daily-direction` (**Kalshi Stock Direction**). Two large, high-contrast panels show the index names, closing dates/times, arrows, UP and DOWN / FLAT percentages, the more likely outcome, and the exact comparison level in index points. UP means strictly above that level; DOWN / FLAT means at or below it. The reference comes from the market's actual rule, rather than assuming an opening price or a particular prior session. Percentages describe market-implied chances, not the size of an index move. UP uses the last Yes trade and DOWN / FLAT its complement, rounded together; a missing, invalid, or untraded price shows a dash. Refresh time is not the last-trade time.
 
-The public [Kalshi market-data API](https://docs.kalshi.com/getting_started/quick_start_market_data) supplies fresh data without an API key. Requests have an 18-second total deadline, a 4 MiB per-response limit, restricted redirects, and no data/image cache. Weekly discovery follows [event-list pagination](https://docs.kalshi.com/api-reference/events/get-events).
+**At 4:00 p.m. America/New_York on a trading day, daily direction rolls to the next listed trading-day market**, including when the API still marks the finished day active. The market's outcome time also allows an earlier close. Kalshi's published dates handle weekends, holidays, and daylight saving time; dates are shown separately if the two indexes have different next available sessions. A listed next-day market appears even before trading opens, with its date/level and **TRADING NOT OPEN YET** in place of odds. When Kalshi has not listed the next market, that panel says **NEXT MARKET PENDING** and retries at the next display. An API outage affects only its own panel. Finished-day odds are never reused, even when an old image URL is requested. The physical display updates on its next scheduled refresh or touchbar advance.
 
-Slides show the six highest last-trade prices, with open markets first, and report the total outcome count. Prices are expressed as percentages; settled outcomes use their Yes/No result. Missing, invalid, and untraded prices display a dash. Restart the server after changing configuration.
+Event URLs select fixed events. A `series:TICKER` entry discovers open events on every display and selects the nearest closing event with an active, already-open market. The Netflix slides therefore roll forward automatically each week; the event subtitle identifies the chart publication date. When no open week is available, the slide displays an unavailable message and retries next time. It does not reuse a settled week's prices. Up to five entries are supported; blanks are skipped and duplicates rejected. Keep `daily-direction` first to lead the Kalshi section. Use `kalshi_pages: []` or omit `kalshi` from `slide_order` to disable them.
+
+The public [Kalshi market-data API](https://docs.kalshi.com/getting_started/quick_start_market_data) supplies fresh data without an API key. Requests have an 18-second total deadline, a 4 MiB per-response limit, restricted redirects, and no data/image cache. The two daily markets are fetched concurrently within one deadline. Live Kalshi data is fetched on image download; display metadata does not fetch it a second time. Daily and weekly discovery follow [event-list pagination](https://docs.kalshi.com/api-reference/events/get-events).
+
+The other Kalshi slides show the six highest last-trade prices, with open markets first, and report the total outcome count. Prices are expressed as percentages; settled outcomes use their Yes/No result. Missing, invalid, and untraded prices display a dash. Restart the server after changing configuration.
 
 ## Newspaper front pages
 

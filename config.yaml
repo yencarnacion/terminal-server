@@ -27,8 +27,9 @@ polymarket_pages:
 # Empty rss_url disables Top News. Empty/offline feeds are retried every minute.
 rss_url: "http://10.17.17.98:8090/up2date/rss.xml"
 
-# Event URLs stay fixed; series entries automatically follow the current open week.
+# Daily direction combines both stock indexes. Series entries roll forward automatically.
 kalshi_pages:
+  - "daily-direction"
   - "https://kalshi.com/markets/kxbtcy/btc-price-range-eoy/kxbtcy-27jan0100"
   - "https://kalshi.com/markets/kxbalancepowercombo/congress-balance-of-power-combo/kxbalancepowercombo-27feb"
   - "series:KXNETFLIXRANKMOVIE"

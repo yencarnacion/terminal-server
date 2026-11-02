@@ -18,13 +18,13 @@ import (
 func TestKalshiConfiguration(t *testing.T) {
 	c := defaultConfiguration()
 	k, err := newKalshi(c.KalshiPages)
-	if err != nil || len(k.pages()) != 4 {
+	if err != nil || len(k.pages()) != 5 || k.pages()[0].ID != kalshiDirectionID {
 		t.Fatal(k, err)
 	}
 	p, _ := newPolymarket(c.PolymarketPages)
 	a := &app{slideOrder: []string{"polymarket", "kalshi"}, polymarket: p, kalshi: k}
 	slides := a.playlist()
-	if len(slides) != 7 || slides[3] != k.pages()[0].ID || slides[6] != k.pages()[3].ID {
+	if len(slides) != 8 || slides[3] != kalshiDirectionID || slides[7] != k.pages()[4].ID {
 		t.Fatal(slides)
 	}
 	for _, raw := range []string{"http://kalshi.com/markets/a/b/a-c", "https://evil.test/markets/a/b/a-c", "https://kalshi.com/markets/a/b/c", "https://kalshi.com/markets/a/../a-c", "series:", "series:A/B"} {
@@ -145,6 +145,23 @@ func TestKalshiLive(t *testing.T) {
 	}
 	k, _ := newKalshi(defaultKalshiPages())
 	for i, p := range k.pages() {
+		if p.ID == kalshiDirectionID {
+			cards := k.fetchDirections(context.Background(), time.Now())
+			for _, card := range cards {
+				if card.strike == nil {
+					t.Fatalf("%s: %s", card.name, card.message)
+				}
+				t.Log(card.name, card.target, *card.strike, card.up)
+			}
+			data, err := renderKalshiDirections(cards, time.Now())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err = os.WriteFile(dir+"/kalshi-direction.png", data, 0600); err != nil {
+				t.Fatal(err)
+			}
+			continue
+		}
 		event, err := k.fetch(context.Background(), p, time.Now())
 		if err != nil {
 			t.Fatal(p, err)

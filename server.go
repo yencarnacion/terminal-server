@@ -337,7 +337,7 @@ func (a *app) nextDisplay(r *http.Request) (string, error) {
 	id, err := a.screenID(mode, a.now())
 	if err == nil {
 		id += readBattery(r.Header).suffix()
-		if !strings.HasPrefix(id, "rss-") && !strings.HasPrefix(id, "cover-") && !strings.HasPrefix(id, "weather-") && !strings.HasPrefix(id, "poly-") {
+		if !strings.HasPrefix(id, "rss-") && !strings.HasPrefix(id, "cover-") && !strings.HasPrefix(id, "weather-") && !strings.HasPrefix(id, "poly-") && !strings.HasPrefix(id, "kalshi-") {
 			_, err = a.image(id)
 		}
 	}
