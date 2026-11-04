@@ -1,10 +1,10 @@
 # Terminal Server
 
-A small Go BYOS server for **TRMNL X**, showing RSS top news, random cowsay fortunes, a month calendar, quarter progress, San Juan weather, newspaper front pages, and configurable Polymarket and Kalshi pages, **one minute per slide** by default. It renders native **1872 × 1404, 4-bit indexed grayscale PNGs** with embedded fonts. No browser, ImageMagick, database, `fortune`, or `cowsay` installation is needed.
+A small Go BYOS server for **TRMNL X**, showing RSS top news, random cowsay fortunes, a month calendar, quarter progress, San Juan weather, newspaper front pages, the actual CNN Fear & Greed Index, and configurable Polymarket and Kalshi pages, **one minute per slide** by default. It renders native **1872 × 1404, 4-bit indexed grayscale PNGs** with embedded fonts. No browser, ImageMagick, database, `fortune`, or `cowsay` installation is needed.
 
 The binary includes the 255 quotes from the original `custom_fortunes/my_quotes.txt`. Fortune image URLs stay tied to the exact quote. The calendar takes its inspiration from a paper wall calendar: a bold month/year band, Sunday-first ruled grid, adjacent-month references, a prominent full date, today's cell highlighted in black, and a large time display.
 
-Calendar dates and times default to **America/New_York**, including daylight-saving changes. Override with `--timezone Europe/London` or another IANA zone. Timezone data is embedded, so the server does not depend on the host's timezone database. The displayed clock is **time at refresh**, not a continuously ticking clock. With two newspaper covers and the default interval, the six-slide cycle takes 6 minutes, so the calendar normally gets a fresh timestamp every 6 minutes.
+Calendar dates and times default to **America/New_York**, including daylight-saving changes. Override with `--timezone Europe/London` or another IANA zone. Timezone data is embedded, so the server does not depend on the host's timezone database. The displayed clock is **time at refresh**, not a continuously ticking clock. The total cycle length depends on the available RSS pages, newspaper covers, and configured data pages. Each page uses `slide_seconds`; the checked-in configuration uses five minutes per page.
 
 Every device screen has a small bottom-center battery icon and percentage. It adds “Charging” when the device reports charging, or “Power connected” when USB power is reported without charging. At 20% or lower while off external power, the indicator turns black and adds “LOW”; otherwise it uses a quieter gray. Readings update at screen refresh, just like the clock.
 
@@ -24,7 +24,7 @@ go build -o bin/terminal-server .
 
 Open **http://10.17.17.90:8177/preview** for an automatically refreshing browser slideshow. Use **Calendar** or **Fortune** to preview either screen directly, or open `/preview?screen=calendar` and `/preview?screen=cowsay`. Browser previews never advance the device's playlist.
 
-The default is `--screen slideshow --refresh 60`. Each successful device display request advances available RSS news → weather → calendar → quarter progress → fortune → each available newspaper cover → each configured Polymarket page → each configured Kalshi page → weather, independently per device. A center touchbar tap also advances the slideshow. Restarting the server starts the device sequence at the first available configured slide. Use `--screen cowsay`, `--screen calendar`, or `--screen quarter` to show just one screen, and `--refresh` to change seconds per screen. Browser slideshow selection uses wall-clock slots and may be on a different slide from the device. Calendar image URLs preserve the scheduled minute even when downloaded after midnight.
+The default is `--screen slideshow --refresh 60`. Each successful device display request advances available RSS news → weather → calendar → quarter progress → fortune → each available newspaper cover → CNN Fear & Greed → each configured Polymarket page → each configured Kalshi page → weather, independently per device. A center touchbar tap also advances the slideshow. Restarting the server starts the device sequence at the first available configured slide. Use `--screen cowsay`, `--screen calendar`, or `--screen quarter` to show just one screen, and `--refresh` to change seconds per screen. Browser slideshow selection uses wall-clock slots and may be on a different slide from the device. Calendar image URLs preserve the scheduled minute even when downloaded after midnight.
 
 ## Top News
 
@@ -39,10 +39,10 @@ Preview with `/preview?screen=rss`, which rotates through the news pages, or sel
 Slide order is configurable in `config.yaml`:
 
 ```yaml
-slide_order: [rss, weather, calendar, quarter, quote, newspapers, polymarket, kalshi]
+slide_order: [rss, weather, calendar, quarter, quote, newspapers, fear-greed, polymarket, kalshi]
 ```
 
-Reorder entries or omit screens you do not want, then restart the server. `quote` is the cowsay fortune screen; `newspapers` expands to one slide per discovered newspaper in the source server's catalog order (currently NYT, then El Nuevo Día). `polymarket` expands to the configured event/market pages in their list order; blank URL slots are skipped. `kalshi` expands to the configured Kalshi pages after Polymarket by default. This includes all current screen types. Disabled weather and unavailable newspaper entries are skipped. If no configured slides are available, fortune is the temporary fallback. Empty lists, duplicate entries, and unknown names are rejected. This setting controls both the device and browser slideshow; single-screen mode ignores the order. Each expanded slide uses `slide_seconds`.
+Reorder entries or omit screens you do not want, then restart the server. `quote` is the cowsay fortune screen; `newspapers` expands to one slide per discovered newspaper in the source server's catalog order (currently NYT, then El Nuevo Día). `fear-greed` adds CNN’s index when enabled. `polymarket` expands to the configured event/market pages in their list order; blank URL slots are skipped. `kalshi` expands to the configured Kalshi pages after Polymarket by default. This includes all current screen types. Disabled weather and unavailable newspaper entries are skipped. If no configured slides are available, fortune is the temporary fallback. Empty lists, duplicate entries, and unknown names are rejected. This setting controls both the device and browser slideshow; single-screen mode ignores the order. Each expanded slide uses `slide_seconds`.
 
 The server reads **`config.yaml`** from its working directory at startup. To change the time between slides, edit:
 
@@ -65,7 +65,7 @@ data_dir: ./data
 frontpages_url: "http://10.17.17.90:8100"
 ```
 
-`screen` accepts `slideshow`, `cowsay`, `calendar`, `quarter`, or `weather`. Empty `quotes_file` uses bundled quotes; empty `frontpages_url` disables newspapers. Cover images are still fetched live and never cached.
+`screen` accepts `slideshow`, `cowsay`, `calendar`, `quarter`, `weather`, `fear-greed`, or `rss`. Empty `quotes_file` uses bundled quotes; empty `frontpages_url` disables newspapers. Cover images are still fetched live and never cached.
 
 Settings precedence is **built-in defaults → YAML → explicitly supplied CLI flags**. Existing flags continue working, so `--refresh 180` overrides `slide_seconds` in the file. Remove explicit flags from your service/launch command for settings you want to control through YAML.
 
@@ -106,21 +106,48 @@ Restart after editing. Changing the name alone does not change the forecast; coo
 
 Forecast data is shared in memory for 15 minutes to respect NWS rate limits; rendered weather images are not cached. Newspaper covers remain completely uncached. Each weather image shows its render time and NWS issue time. On fetch failure, the slide displays an unavailable message and retries after two minutes, without interrupting other slides or silently using stale data. Forecasts issued over 24 hours ago are rejected. Missing values show a dash, not zero. Today's high disappears after its forecast period ends; night lows belong to the evening when that period starts. Daily rain chance is the maximum of the remaining day/night period probabilities, not a calculated whole-day probability.
 
+## CNN Fear & Greed Index
+
+The `fear-greed` page displays CNN Business’s actual **0–100 US stock-market sentiment index**: the latest published score and rating, a grayscale gauge, previous close/week/month/year comparisons, and CNN’s source timestamp. It is separate from prediction-market pages.
+
+```yaml
+fear_greed_enabled: true
+slide_order: [rss, weather, calendar, quarter, quote, newspapers, fear-greed, polymarket, kalshi]
+```
+
+Preview it at `/preview?screen=fear-greed`, or select `screen: fear-greed` for this page alone. Disable it with `fear_greed_enabled: false` or omit it from `slide_order`.
+
+The source is CNN’s public `production.dataviz.cnn.io/index/fearandgreed/graphdata` feed. Valid readings are shared in memory for five minutes; rendered images are never cached. Missing or invalid scores are not treated as zero. The supplied CNN rating is shown directly. Source readings older than 36 hours get a visible age note; those over seven days old or implausibly in the future are rejected. Missing historical comparisons show a dash. When fetching fails, the page shows an unavailable message and retries after two minutes; it does not silently reuse an expired cached reading.
+
+## Scrapfly fallback for external pages
+
+The checked-in configuration uses the supplied MCP server:
+
+```yaml
+scrapfly_mcp_url: "http://10.17.17.90:8085/mcp"
+```
+
+External-data clients try their source directly first. On a network failure or supported rejection/server-error response, the shared fallback requests the same public source through Scrapfly’s MCP scraping tool with caching disabled. CNN, Kalshi, Polymarket, weather, and publicly hosted RSS/frontpage sources share this behavior. Source parsing and freshness checks still apply; the fallback does not substitute another index or prediction market. No browser session cookies or authorization headers are sent to Scrapfly.
+
+The MCP adapter supports text, JSON, and XML responses; binary cover-image downloads retain their direct fetch and existing failure behavior. Private LAN/loopback sources remain direct because Scrapfly’s cloud fetch cannot reach them. This includes the checked-in local RSS and frontpages services; those services retain their existing retry/unavailable behavior. Set `scrapfly_mcp_url: ""` to disable the fallback. The endpoint must be an HTTP(S) URL without credentials, a query string, or a fragment. MCP failures remain bounded by the existing page request deadlines.
+
 ## Polymarket pages
 
 Inspired by the [TRMNL Polymarket recipe](https://trmnl.com/recipes/186483), each configured page becomes a separate full-screen slide after newspapers, using the shared `slide_seconds` duration (60 seconds by default), date/time, and battery footer. This is a read-only display; it never connects a wallet or places trades.
 
-Paste up to three page URLs into `config.yaml`, then restart:
+Configure up to three page URLs or supported recurring selectors in `config.yaml`, then restart:
 
 ```yaml
-slide_order: [rss, weather, calendar, quarter, quote, newspapers, polymarket, kalshi]
+slide_order: [rss, weather, calendar, quarter, quote, newspapers, fear-greed, polymarket, kalshi]
 polymarket_pages:
   - "https://polymarket.com/event/what-price-will-bitcoin-hit-before-2027"
-  - "https://polymarket.com/event/which-party-will-win-the-house-in-2026"
-  - "https://polymarket.com/event/which-party-will-win-the-senate-in-2026"
+  - "series:best-ai-model"
+  - "series:mu-kpis:dram-revenue"
 ```
 
-The initial pages are Bitcoin, House, and Senate, in that order. Replace these URLs to choose different pages; blank slots are skipped. The server accepts `/event/event-slug`, `/event/event-slug/market-slug` for a specific market in an event, and `/market/market-slug` URLs on polymarket.com. Category, profile, and search pages are not supported. Tracking query parameters are ignored. Duplicate pages, unsupported URLs, and more than three slots are rejected at startup. Browser preview navigation gains a link for each configured page. If you already have a custom `slide_order`, add `polymarket` after `newspapers` yourself.
+The initial pages are Bitcoin, the best individual AI model each week, and Micron quarterly DRAM revenue, in that order. The completed House and Senate pages have been removed. Blank slots are skipped. The server accepts `/event/event-slug`, `/event/event-slug/market-slug` for a specific market in an event, and `/market/market-slug` URLs on polymarket.com. Category, profile, and search pages are not supported. Tracking query parameters are ignored. Duplicate pages, unsupported URLs, and more than three slots are rejected at startup. Browser preview navigation gains a link for each configured page. If you already have a custom `slide_order`, add `polymarket` after `newspapers` yourself.
+
+`series:best-ai-model` discovers the nearest open weekly model event and rolls at the rule’s **12:00 p.m. America/New_York** observation time, including daylight saving time, rather than waiting for the API’s later closing timestamp. `series:mu-kpis:dram-revenue` discovers the nearest open Micron event whose title specifically identifies DRAM revenue; NAND and gross-margin markets cannot replace it. Micron quarters are ordered by the scheduled earnings date but remain eligible while open and accepting orders until the rules’ explicit latest-publication deadline. Closure or that deadline triggers rollover; unknown deadline formats are skipped. Both selectors require active markets accepting orders and use bounded pagination. If no eligible successor is listed, the page shows **Next market pending** and retries on the next display, without reusing old odds. Fixed URLs continue to select a fixed event.
 
 The server fetches the public [Polymarket Gamma API](https://docs.polymarket.com/api-reference/events/get-event-by-slug) on every image request, with no API key, local data cache, or image cache. Requests have an 18-second timeout, a 4 MiB response limit, and redirects restricted to the API host. API errors produce an unavailable slide and retry on the next display rather than showing saved prices.
 
@@ -128,13 +155,15 @@ Single-market pages show each outcome; multi-market events show the Yes price fo
 
 ## Kalshi pages
 
-Five Kalshi slides follow Polymarket. The first combines **Nasdaq-100 and S&P 500 daily direction** on one screen, followed by Bitcoin's end-of-2026 price range, Congress balance of power, the top US Netflix movie, and the #2 US Netflix show. Each has a browser preview link, battery footer, and configured slide duration (300 seconds in the checked-in configuration).
+Seven Kalshi slides follow Polymarket: **Nasdaq-100 and S&P 500 daily direction** together, Bitcoin’s end-of-2026 price range, the next Fed rate decision, Netflix #1 US show, Netflix #2 US movie, and the existing Netflix #1 US movie and #2 US show. The completed Congress balance-of-power page has been removed. Each has a browser preview link, battery footer, and configured slide duration (300 seconds in the checked-in configuration).
 
 ```yaml
 kalshi_pages:
   - "daily-direction"
   - "https://kalshi.com/markets/kxbtcy/btc-price-range-eoy/kxbtcy-27jan0100"
-  - "https://kalshi.com/markets/kxbalancepowercombo/congress-balance-of-power-combo/kxbalancepowercombo-27feb"
+  - "series:KXFEDDECISION"
+  - "series:KXNETFLIXRANKSHOW"
+  - "series:KXNETFLIXRANKMOVIERUNNERUP"
   - "series:KXNETFLIXRANKMOVIE"
   - "series:KXNETFLIXRANKSHOWRUNNERUP"
 ```
@@ -143,7 +172,7 @@ The `daily-direction` entry uses the [Nasdaq-100 daily direction](https://kalshi
 
 **At 4:00 p.m. America/New_York on a trading day, daily direction rolls to the next listed trading-day market**, including when the API still marks the finished day active. The market's outcome time also allows an earlier close. Kalshi's published dates handle weekends, holidays, and daylight saving time; dates are shown separately if the two indexes have different next available sessions. A listed next-day market appears even before trading opens, with its date/level and **TRADING NOT OPEN YET** in place of odds. When Kalshi has not listed the next market, that panel says **NEXT MARKET PENDING** and retries at the next display. An API outage affects only its own panel. Finished-day odds are never reused, even when an old image URL is requested. The physical display updates on its next scheduled refresh or touchbar advance.
 
-Event URLs select fixed events. A `series:TICKER` entry discovers open events on every display and selects the nearest closing event with an active, already-open market. The Netflix slides therefore roll forward automatically each week; the event subtitle identifies the chart publication date. When no open week is available, the slide displays an unavailable message and retries next time. It does not reuse a settled week's prices. Up to five entries are supported; blanks are skipped and duplicates rejected. Keep `daily-direction` first to lead the Kalshi section. Use `kalshi_pages: []` or omit `kalshi` from `slide_order` to disable them.
+Event URLs select fixed events. A `series:TICKER` entry discovers open events on every display and selects the nearest closing event with an active, already-open market. The Fed page rolls to the next listed meeting, and the Netflix slides roll forward automatically each week; the event subtitle identifies the chart publication date. When no open week is available, the slide displays an unavailable message and retries next time. It does not reuse a settled week's prices. Up to seven entries are supported; blanks are skipped and duplicates rejected. Keep `daily-direction` first to lead the Kalshi section. Use `kalshi_pages: []` or omit `kalshi` from `slide_order` to disable them.
 
 The public [Kalshi market-data API](https://docs.kalshi.com/getting_started/quick_start_market_data) supplies fresh data without an API key. Requests have an 18-second total deadline, a 4 MiB per-response limit, restricted redirects, and no data/image cache. The two daily markets are fetched concurrently within one deadline. Live Kalshi data is fetched on image download; display metadata does not fetch it a second time. Daily and weekly discovery follow [event-list pagination](https://docs.kalshi.com/api-reference/events/get-events).
 

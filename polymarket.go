@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"image"
 	"image/color"
@@ -27,15 +28,33 @@ import (
 	"golang.org/x/image/math/fixed"
 )
 
-type polymarketPage struct{ ID, Event, Market string }
+type polymarketPage struct{ ID, Event, Market, Series, Filter string }
 
 var polySlug = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 
+var errPolyNextEventPending = errors.New("next matching Polymarket event pending")
+
 func parsePolymarketPage(raw string) (polymarketPage, error) {
 	p := polymarketPage{}
+	raw = strings.TrimSpace(raw)
+	if strings.HasPrefix(raw, "series:") {
+		parts := strings.Split(raw, ":")
+		// These selectors have known resolution rules. In particular, mu-kpis
+		// includes NAND and margin markets that must not replace DRAM revenue.
+		if raw != "series:best-ai-model" && raw != "series:mu-kpis:dram-revenue" {
+			return p, fmt.Errorf("supported Polymarket series are series:best-ai-model and series:mu-kpis:dram-revenue")
+		}
+		p.Series = parts[1]
+		if len(parts) == 3 {
+			p.Filter = parts[2]
+		}
+		sum := sha256.Sum256([]byte(raw))
+		p.ID = fmt.Sprintf("poly-%x", sum[:12])
+		return p, nil
+	}
 	u, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil || u.Scheme != "https" || (u.Host != "polymarket.com" && u.Host != "www.polymarket.com") || u.User != nil {
-		return p, fmt.Errorf("polymarket_pages requires https://polymarket.com/event/... URLs")
+		return p, fmt.Errorf("polymarket_pages requires a supported series selector or https://polymarket.com/event/... URL")
 	}
 	parts := strings.Split(strings.Trim(u.Path, "/"), "/")
 	if len(parts) < 2 || len(parts) > 3 || (parts[0] != "event" && parts[0] != "market") || (parts[0] == "market" && len(parts) != 2) {
@@ -91,15 +110,20 @@ func (p *polymarketService) pages() []polymarketPage {
 }
 
 type polyMarket struct {
-	Slug, Question, GroupItemTitle string
-	Outcomes, OutcomePrices        json.RawMessage
-	Closed, Active, Archived       bool
+	Slug, Question, GroupItemTitle  string
+	Description, StartDate, EndDate string
+	Outcomes, OutcomePrices         json.RawMessage
+	Closed, Active, Archived        bool
+	AcceptingOrders                 *bool
 }
 type polyEvent struct {
-	Title   string
-	Closed  bool
-	Markets []polyMarket
+	ID, Slug, Title, Description, StartDate, EndDate string
+	Closed, Active, Archived                         bool
+	Markets                                          []polyMarket
+	Series                                           []polySeries
 }
+
+type polySeries struct{ ID, Slug string }
 
 func (p *polymarketService) get(ctx context.Context, path string, out any) error {
 	req, err := http.NewRequestWithContext(ctx, "GET", "https://gamma-api.polymarket.com"+path, nil)
@@ -127,6 +151,17 @@ func (p *polymarketService) get(ctx context.Context, path string, out any) error
 	return json.Unmarshal(data, out)
 }
 func (p *polymarketService) fetch(ctx context.Context, page polymarketPage) (polyEvent, error) {
+	return p.fetchAt(ctx, page, time.Now())
+}
+
+func (p *polymarketService) fetchAt(ctx context.Context, page polymarketPage, now time.Time) (polyEvent, error) {
+	// Discovery may make several requests; bound the complete operation as well
+	// as each HTTP request, so pagination cannot stall the slideshow.
+	ctx, cancel := context.WithTimeout(ctx, 18*time.Second)
+	defer cancel()
+	if page.Series != "" {
+		return p.fetchSeries(ctx, page, now)
+	}
 	var event polyEvent
 	if page.Event != "" {
 		if err := p.get(ctx, "/events/slug/"+page.Event, &event); err != nil {
@@ -151,6 +186,184 @@ func (p *polymarketService) fetch(ctx context.Context, page polymarketPage) (pol
 		return event, fmt.Errorf("missing event data")
 	}
 	return event, nil
+}
+
+var bestModelDate = regexp.MustCompile(`(?i)^Best AI model on ([a-z]+) ([0-9]{1,2})(?:,? ([0-9]{4}))?\?$`)
+var bestModelNoon = regexp.MustCompile(`(?i)12:00\s*PM\s*ET`)
+var micronPublicationRule = regexp.MustCompile(`(?i)does not release quarterly earnings materials for the specified quarter by ([a-z]+ [0-9]{1,2}, [0-9]{4}, [0-9]{1,2}:[0-9]{2} [AP]M) ET`)
+
+// Micron's endDate is a scheduled earnings date, not a hard expiration. Its
+// resolution rules explicitly permit delayed publication through a later date.
+// Use that deadline to bound active markets instead of dropping them early or
+// retaining stale quarters indefinitely. Unknown rule formats fail closed.
+func polyMicronPublicationDeadline(description string) (time.Time, error) {
+	lower := strings.ToLower(description)
+	parts := micronPublicationRule.FindAllStringSubmatch(description, -1)
+	if len(parts) != 1 || !strings.Contains(lower, "micron") || !strings.Contains(lower, "dram revenue") {
+		return time.Time{}, fmt.Errorf("unrecognized Micron DRAM publication deadline")
+	}
+	loc, err := time.LoadLocation("America/New_York")
+	if err != nil {
+		return time.Time{}, err
+	}
+	deadline, err := time.ParseInLocation("January 2, 2006, 3:04 PM", parts[0][1], loc)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("invalid Micron DRAM publication deadline: %w", err)
+	}
+	return deadline, nil
+}
+
+// The best-model series observes its leaderboard at noon New York time, even
+// though Gamma's endDate is usually that night's end. Never retain a finished
+// observation just because the API still marks it active.
+func polyObservationTime(page polymarketPage, event polyEvent) (time.Time, error) {
+	end, err := time.Parse(time.RFC3339, event.EndDate)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("missing or invalid event end date")
+	}
+	if page.Series != "best-ai-model" {
+		return end, nil
+	}
+	parts := bestModelDate.FindStringSubmatch(event.Title)
+	if parts == nil || !bestModelNoon.MatchString(event.Description) {
+		return time.Time{}, fmt.Errorf("unrecognized best-model observation rule")
+	}
+	loc, err := time.LoadLocation("America/New_York")
+	if err != nil {
+		return time.Time{}, err
+	}
+	year := parts[3]
+	if year == "" {
+		year = strconv.Itoa(end.In(loc).Year())
+	}
+	date, err := time.ParseInLocation("January 2 2006 15:04", parts[1]+" "+parts[2]+" "+year+" 12:00", loc)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("invalid best-model observation date: %w", err)
+	}
+	if end.Before(date) {
+		return end, nil
+	}
+	return date, nil
+}
+
+func polySeriesMatches(page polymarketPage, event polyEvent, seriesID string) bool {
+	member := false
+	for _, series := range event.Series {
+		if series.ID == seriesID && series.Slug == page.Series {
+			member = true
+		}
+	}
+	if !member {
+		return false
+	}
+	if page.Filter == "dram-revenue" {
+		return strings.Contains(strings.ToLower(event.Title), "micron") &&
+			strings.Contains(strings.ToLower(event.Title), "dram revenue")
+	}
+	return true
+}
+
+func (p *polymarketService) fetchSeries(ctx context.Context, page polymarketPage, now time.Time) (polyEvent, error) {
+	var series []polySeries
+	q := url.Values{"slug": {page.Series}, "limit": {"100"}}
+	if err := p.get(ctx, "/series?"+q.Encode(), &series); err != nil {
+		return polyEvent{}, err
+	}
+	seriesID := ""
+	for _, s := range series {
+		if s.Slug == page.Series {
+			if _, err := strconv.ParseUint(s.ID, 10, 64); err != nil || seriesID != "" {
+				return polyEvent{}, fmt.Errorf("invalid or ambiguous Polymarket series")
+			}
+			seriesID = s.ID
+		}
+	}
+	if seriesID == "" {
+		return polyEvent{}, fmt.Errorf("Polymarket series not found")
+	}
+	const pageSize, maxPages = 20, 10
+	var selected polyEvent
+	var next time.Time
+	seen := make(map[string]bool)
+	for batch := 0; batch < maxPages; batch++ {
+		q = url.Values{"series_id": {seriesID}, "active": {"true"}, "closed": {"false"}, "archived": {"false"},
+			"limit": {strconv.Itoa(pageSize)}, "offset": {strconv.Itoa(batch * pageSize)}, "order": {"endDate"}, "ascending": {"true"}}
+		var events []polyEvent
+		if err := p.get(ctx, "/events?"+q.Encode(), &events); err != nil {
+			return polyEvent{}, err
+		}
+		for _, event := range events {
+			if event.Slug == "" || seen[event.Slug] {
+				continue
+			}
+			seen[event.Slug] = true
+			if !polySeriesMatches(page, event, seriesID) || !event.Active || event.Closed || event.Archived {
+				continue
+			}
+			if event.StartDate != "" {
+				start, err := time.Parse(time.RFC3339, event.StartDate)
+				if err != nil || start.After(now) {
+					continue
+				}
+			}
+			observation, err := polyObservationTime(page, event)
+			if err != nil {
+				continue
+			}
+			deadline := observation
+			if page.Filter == "dram-revenue" {
+				deadline, err = polyMicronPublicationDeadline(event.Description)
+			}
+			if err != nil || !deadline.After(now) {
+				continue
+			}
+			var markets []polyMarket
+			for _, m := range event.Markets {
+				if !m.Active || m.Closed || m.Archived || m.AcceptingOrders == nil || !*m.AcceptingOrders {
+					continue
+				}
+				if m.StartDate != "" {
+					start, err := time.Parse(time.RFC3339, m.StartDate)
+					if err != nil || start.After(now) {
+						continue
+					}
+				}
+				if page.Filter == "dram-revenue" {
+					// Markets normally repeat the event rules. Honor a market's
+					// own deadline when supplied; otherwise use the event rule.
+					marketDeadline := deadline
+					var deadlineErr error
+					if m.Description != "" {
+						marketDeadline, deadlineErr = polyMicronPublicationDeadline(m.Description)
+					}
+					if deadlineErr != nil || !marketDeadline.After(now) {
+						continue
+					}
+				} else if m.EndDate != "" {
+					end, err := time.Parse(time.RFC3339, m.EndDate)
+					if err != nil || !end.After(now) {
+						continue
+					}
+				}
+				markets = append(markets, m)
+			}
+			if len(markets) == 0 {
+				continue
+			}
+			if next.IsZero() || observation.Before(next) || (observation.Equal(next) && event.Slug < selected.Slug) {
+				event.Markets = markets
+				selected, next = event, observation
+			}
+		}
+		if len(events) < pageSize {
+			if next.IsZero() {
+				return polyEvent{}, errPolyNextEventPending
+			}
+			return selected, nil
+		}
+	}
+	// Do not choose from an incomplete result set or reuse previous odds.
+	return polyEvent{}, fmt.Errorf("Polymarket series exceeded discovery page limit")
 }
 
 // Gamma supplies arrays serialized as JSON strings. Also accept native arrays.
@@ -242,7 +455,7 @@ func (p *polymarketService) render(ctx context.Context, id string, now time.Time
 		if _, err := strconv.ParseInt(strings.TrimPrefix(id, page.ID+"-"), 10, 64); err != nil {
 			return nil, os.ErrNotExist
 		}
-		event, err := p.fetch(ctx, page)
+		event, err := p.fetchAt(ctx, page, now)
 		if err != nil {
 			log.Printf("polymarket %s: %v", page.ID, err)
 		}
@@ -304,7 +517,11 @@ func renderMarketPage(brand, source, title string, rows []polyRow, priceLabel st
 	text(80, 95, 48, 750, brand, true)
 	text(1080, 90, 32, 710, now.Format("Mon, Jan 2, 2006 · 3:04 PM MST"), false)
 	rect(80, 128, 1792, 131, 0)
-	if fetchErr != nil {
+	if errors.Is(fetchErr, errPolyNextEventPending) {
+		text(80, 360, 66, 1700, "Next market pending", true)
+		text(80, 460, 34, 1700, "The next matching event is not open yet.", false)
+		text(80, 525, 34, 1700, "This slide will check again on its next display. No old prices are shown.", false)
+	} else if fetchErr != nil {
 		text(80, 360, 66, 1700, "Market data temporarily unavailable", true)
 		text(80, 460, 34, 1700, "Check the configured page URL and network connection.", false)
 		text(80, 525, 34, 1700, "This slide will retry on its next display. No old prices are shown.", false)

@@ -18,13 +18,13 @@ import (
 func TestKalshiConfiguration(t *testing.T) {
 	c := defaultConfiguration()
 	k, err := newKalshi(c.KalshiPages)
-	if err != nil || len(k.pages()) != 5 || k.pages()[0].ID != kalshiDirectionID {
+	if err != nil || len(k.pages()) != 7 || k.pages()[0].ID != kalshiDirectionID {
 		t.Fatal(k, err)
 	}
 	p, _ := newPolymarket(c.PolymarketPages)
 	a := &app{slideOrder: []string{"polymarket", "kalshi"}, polymarket: p, kalshi: k}
 	slides := a.playlist()
-	if len(slides) != 8 || slides[3] != kalshiDirectionID || slides[7] != k.pages()[4].ID {
+	if len(slides) != 10 || slides[3] != kalshiDirectionID || slides[9] != k.pages()[6].ID {
 		t.Fatal(slides)
 	}
 	for _, raw := range []string{"http://kalshi.com/markets/a/b/a-c", "https://evil.test/markets/a/b/a-c", "https://kalshi.com/markets/a/b/c", "https://kalshi.com/markets/a/../a-c", "series:", "series:A/B"} {

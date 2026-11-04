@@ -23,7 +23,9 @@ func defaultKalshiPages() []string {
 	return []string{
 		"daily-direction",
 		"https://kalshi.com/markets/kxbtcy/btc-price-range-eoy/kxbtcy-27jan0100",
-		"https://kalshi.com/markets/kxbalancepowercombo/congress-balance-of-power-combo/kxbalancepowercombo-27feb",
+		"series:KXFEDDECISION",
+		"series:KXNETFLIXRANKSHOW",
+		"series:KXNETFLIXRANKMOVIERUNNERUP",
 		"series:KXNETFLIXRANKMOVIE",
 		"series:KXNETFLIXRANKSHOWRUNNERUP",
 	}
@@ -44,10 +46,16 @@ func parseKalshiPage(raw string) (kalshiPage, error) {
 		}
 		p.Label = "Kalshi " + p.Series
 		switch p.Series {
+		case "KXFEDDECISION":
+			p.Label = "Kalshi Next Fed Decision"
+		case "KXNETFLIXRANKSHOW":
+			p.Label = "Kalshi #1 US Netflix Show"
+		case "KXNETFLIXRANKMOVIERUNNERUP":
+			p.Label = "Kalshi #2 US Netflix Movie"
 		case "KXNETFLIXRANKMOVIE":
-			p.Label = "Kalshi Netflix Movie"
+			p.Label = "Kalshi #1 US Netflix Movie"
 		case "KXNETFLIXRANKSHOWRUNNERUP":
-			p.Label = "Kalshi #2 Netflix Show"
+			p.Label = "Kalshi #2 US Netflix Show"
 		}
 	} else {
 		u, err := url.Parse(raw)
@@ -86,8 +94,8 @@ func newKalshi(raw []string) (*kalshiService, error) {
 		}
 		return nil
 	}}}
-	if len(raw) > 5 {
-		return nil, fmt.Errorf("kalshi_pages supports up to five entries")
+	if len(raw) > 7 {
+		return nil, fmt.Errorf("kalshi_pages supports up to seven entries")
 	}
 	seen := map[string]bool{}
 	for _, s := range raw {

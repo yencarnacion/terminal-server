@@ -1,10 +1,10 @@
 # Seconds each slide stays on the TRMNL. Restart the server after editing.
 slide_seconds: 300
-slide_order: [rss, weather, calendar, quarter, quote, newspapers, polymarket, kalshi]
+slide_order: [rss, weather, calendar, quarter, quote, newspapers, fear-greed, polymarket, kalshi]
 
 listen: ":8177"
 base_url: "http://10.17.17.90:8177"
-screen: slideshow # slideshow, cowsay, calendar, quarter, weather, or rss
+screen: slideshow # slideshow, cowsay, calendar, quarter, weather, fear-greed, or rss
 timezone: America/New_York
 
 # Empty quotes_file uses the quotes bundled into the binary.
@@ -13,16 +13,21 @@ data_dir: ./data
 
 # Empty frontpages_url disables newspaper slides. Covers are never cached.
 frontpages_url: "http://10.17.17.90:8100"
+# Fallback for rejected/failed public data requests; empty disables it.
+scrapfly_mcp_url: "http://10.17.17.90:8085/mcp"
+
+# CNN’s actual 0–100 index, fetched directly from its public data feed.
+fear_greed_enabled: true
 weather_enabled: true
 weather_location: "San Juan, PR"
 weather_latitude: 18.4655
 weather_longitude: -66.1057
 
-# Paste up to three https://polymarket.com/event/... URLs; blank slots are skipped.
+# Up to three Polymarket URLs or recurring series selectors; blank slots are skipped.
 polymarket_pages:
   - "https://polymarket.com/event/what-price-will-bitcoin-hit-before-2027"
-  - "https://polymarket.com/event/which-party-will-win-the-house-in-2026"
-  - "https://polymarket.com/event/which-party-will-win-the-senate-in-2026"
+  - "series:best-ai-model"
+  - "series:mu-kpis:dram-revenue"
 
 # Empty rss_url disables Top News. Empty/offline feeds are retried every minute.
 rss_url: "http://10.17.17.98:8090/up2date/rss.xml"
@@ -31,6 +36,8 @@ rss_url: "http://10.17.17.98:8090/up2date/rss.xml"
 kalshi_pages:
   - "daily-direction"
   - "https://kalshi.com/markets/kxbtcy/btc-price-range-eoy/kxbtcy-27jan0100"
-  - "https://kalshi.com/markets/kxbalancepowercombo/congress-balance-of-power-combo/kxbalancepowercombo-27feb"
+  - "series:KXFEDDECISION"
+  - "series:KXNETFLIXRANKSHOW"
+  - "series:KXNETFLIXRANKMOVIERUNNERUP"
   - "series:KXNETFLIXRANKMOVIE"
   - "series:KXNETFLIXRANKSHOWRUNNERUP"

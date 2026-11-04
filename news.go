@@ -66,6 +66,7 @@ func (n *newsService) refresh(ctx context.Context) (err error) {
 		return err
 	}
 	req.Header.Set("Cache-Control", "no-cache")
+	req.Header.Set("Accept", "application/rss+xml, application/xml, text/xml")
 	resp, err := n.client.Do(req)
 	if err != nil {
 		return err

@@ -28,6 +28,8 @@ type configuration struct {
 	QuotesFile       string   `yaml:"quotes_file"`
 	DataDir          string   `yaml:"data_dir"`
 	FrontpagesURL    string   `yaml:"frontpages_url"`
+	ScrapflyMCPURL   string   `yaml:"scrapfly_mcp_url"`
+	FearGreedEnabled bool     `yaml:"fear_greed_enabled"`
 	WeatherEnabled   bool     `yaml:"weather_enabled"`
 	WeatherLocation  string   `yaml:"weather_location"`
 	WeatherLatitude  float64  `yaml:"weather_latitude"`
@@ -35,7 +37,15 @@ type configuration struct {
 }
 
 func defaultConfiguration() configuration {
-	return configuration{RSSURL: defaultRSSURL, KalshiPages: defaultKalshiPages(), PolymarketPages: []string{"https://polymarket.com/event/what-price-will-bitcoin-hit-before-2027", "https://polymarket.com/event/which-party-will-win-the-house-in-2026", "https://polymarket.com/event/which-party-will-win-the-senate-in-2026"}, SlideOrder: []string{"rss", "weather", "calendar", "quarter", "quote", "newspapers", "polymarket", "kalshi"}, Listen: ":8177", BaseURL: "http://10.17.17.90:8177", SlideSeconds: 60, Screen: "slideshow", Timezone: "America/New_York", DataDir: "./data", FrontpagesURL: "http://10.17.17.90:8100", WeatherEnabled: true, WeatherLocation: "San Juan, PR", WeatherLatitude: 18.4655, WeatherLongitude: -66.1057}
+	return configuration{RSSURL: defaultRSSURL, KalshiPages: defaultKalshiPages(), PolymarketPages: defaultPolymarketPages(), SlideOrder: []string{"rss", "weather", "calendar", "quarter", "quote", "newspapers", "fear-greed", "polymarket", "kalshi"}, Listen: ":8177", BaseURL: "http://10.17.17.90:8177", SlideSeconds: 60, Screen: "slideshow", Timezone: "America/New_York", DataDir: "./data", FrontpagesURL: "http://10.17.17.90:8100", ScrapflyMCPURL: "http://10.17.17.90:8085/mcp", FearGreedEnabled: true, WeatherEnabled: true, WeatherLocation: "San Juan, PR", WeatherLatitude: 18.4655, WeatherLongitude: -66.1057}
+}
+
+func defaultPolymarketPages() []string {
+	return []string{
+		"https://polymarket.com/event/what-price-will-bitcoin-hit-before-2027",
+		"series:best-ai-model",
+		"series:mu-kpis:dram-revenue",
+	}
 }
 
 // Precedence: built-in defaults < YAML values < explicitly supplied CLI flags.
@@ -49,7 +59,7 @@ func readConfiguration(args []string, output io.Writer) (configuration, error) {
 	fs.StringVar(&cli.Listen, "listen", cli.Listen, "HTTP bind address")
 	fs.StringVar(&cli.BaseURL, "base-url", cli.BaseURL, "URL reachable by the device")
 	fs.IntVar(&cli.SlideSeconds, "refresh", cli.SlideSeconds, "seconds each slideshow screen is displayed")
-	fs.StringVar(&cli.Screen, "screen", cli.Screen, "slideshow, cowsay, calendar, quarter, weather, or rss")
+	fs.StringVar(&cli.Screen, "screen", cli.Screen, "slideshow, cowsay, calendar, quarter, weather, fear-greed, or rss")
 	fs.StringVar(&cli.Timezone, "timezone", cli.Timezone, "IANA timezone")
 	fs.StringVar(&cli.QuotesFile, "quotes", cli.QuotesFile, "fortune-format file; empty uses bundled quotes")
 	fs.StringVar(&cli.DataDir, "data-dir", cli.DataDir, "persistent device key directory")
@@ -115,7 +125,7 @@ func (c configuration) validate() error {
 	seen := map[string]bool{}
 	for _, name := range c.SlideOrder {
 		switch name {
-		case "rss", "weather", "calendar", "quarter", "quote", "newspapers", "polymarket", "kalshi":
+		case "rss", "weather", "calendar", "quarter", "quote", "newspapers", "fear-greed", "polymarket", "kalshi":
 		default:
 			return fmt.Errorf("unknown slide_order entry %q", name)
 		}
@@ -131,7 +141,7 @@ func (c configuration) validate() error {
 		return err
 	}
 	if len(c.PolymarketPages) > 3 {
-		return fmt.Errorf("polymarket_pages supports up to three URLs")
+		return fmt.Errorf("polymarket_pages supports up to three entries")
 	}
 	pages := map[string]bool{}
 	for _, raw := range c.PolymarketPages {
@@ -159,8 +169,17 @@ func (c configuration) validate() error {
 	if c.Screen == "rss" && c.RSSURL == "" {
 		return fmt.Errorf("rss screen requires rss_url")
 	}
-	if c.Screen != "rss" && c.Screen != "slideshow" && c.Screen != "cowsay" && c.Screen != "calendar" && c.Screen != "quarter" && c.Screen != "weather" {
+	if c.Screen != "rss" && c.Screen != "slideshow" && c.Screen != "cowsay" && c.Screen != "calendar" && c.Screen != "quarter" && c.Screen != "weather" && c.Screen != "fear-greed" {
 		return fmt.Errorf("unknown screen %q", c.Screen)
+	}
+	if c.ScrapflyMCPURL != "" {
+		u, err := url.Parse(c.ScrapflyMCPURL)
+		if err != nil || u.Hostname() == "" || (u.Scheme != "http" && u.Scheme != "https") || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+			return fmt.Errorf("scrapfly_mcp_url must be an HTTP(S) URL without credentials, query, or fragment, or empty")
+		}
+	}
+	if c.Screen == "fear-greed" && !c.FearGreedEnabled {
+		return fmt.Errorf("fear-greed screen requires fear_greed_enabled")
 	}
 	if c.WeatherEnabled && (!(c.WeatherLatitude >= -90 && c.WeatherLatitude <= 90) || !(c.WeatherLongitude >= -180 && c.WeatherLongitude <= 180) || strings.TrimSpace(c.WeatherLocation) == "" || len(c.WeatherLocation) > 60) {
 		return fmt.Errorf("weather requires valid coordinates and a location name of 1–60 bytes")

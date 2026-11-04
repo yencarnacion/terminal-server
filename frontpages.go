@@ -71,7 +71,7 @@ func newFrontpages(origin string) (*frontpages, error) {
 	return f, nil
 }
 
-func (f *frontpages) get(ctx context.Context, path string, limit int64) ([]byte, error) {
+func (f *frontpages) get(ctx context.Context, path string, limit int64, accept string) ([]byte, error) {
 	relative, err := url.Parse(path)
 	if err != nil {
 		return nil, err
@@ -86,6 +86,7 @@ func (f *frontpages) get(ctx context.Context, path string, limit int64) ([]byte,
 	}
 	req.Header.Set("Cache-Control", "no-cache, no-store")
 	req.Header.Set("Pragma", "no-cache")
+	req.Header.Set("Accept", accept)
 	resp, err := f.client.Do(req)
 	if err != nil {
 		return nil, err
@@ -125,7 +126,7 @@ func (f *frontpages) render(ctx context.Context, id string) ([]byte, error) {
 	if paper.ID == "" {
 		return nil, os.ErrNotExist
 	}
-	data, err := f.get(ctx, "/api/newspapers/"+url.PathEscape(paper.PaperID)+"/today", 1<<20)
+	data, err := f.get(ctx, "/api/newspapers/"+url.PathEscape(paper.PaperID)+"/today", 1<<20, "application/json")
 	if err != nil {
 		return nil, err
 	}
@@ -139,7 +140,7 @@ func (f *frontpages) render(ctx context.Context, id string) ([]byte, error) {
 	if _, err = time.Parse("2006-01-02", meta.Date); err != nil {
 		return nil, fmt.Errorf("invalid edition date for %s", paper.PaperID)
 	}
-	raw, err := f.get(ctx, meta.ImageURL, 20<<20)
+	raw, err := f.get(ctx, meta.ImageURL, 20<<20, "image/png, image/jpeg, image/webp")
 	if err != nil {
 		return nil, err
 	}
@@ -147,7 +148,7 @@ func (f *frontpages) render(ctx context.Context, id string) ([]byte, error) {
 }
 
 func (f *frontpages) refresh(ctx context.Context) error {
-	data, err := f.get(ctx, "/api/newspapers", 1<<20)
+	data, err := f.get(ctx, "/api/newspapers", 1<<20, "application/json")
 	if err != nil {
 		return err
 	}

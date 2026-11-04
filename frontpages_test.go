@@ -178,10 +178,10 @@ func TestFrontpagesBoundaries(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = f.get(context.Background(), "/", 4); err == nil {
+	if _, err = f.get(context.Background(), "/", 4, "application/json"); err == nil {
 		t.Fatal("response limit not enforced")
 	}
-	if _, err = f.get(context.Background(), "http://elsewhere.invalid/cover.png", 100); err == nil {
+	if _, err = f.get(context.Background(), "http://elsewhere.invalid/cover.png", 100, "image/png"); err == nil {
 		t.Fatal("cross-origin URL accepted")
 	}
 	if _, err = renderCover([]byte("not an image"), "paper", "Paper", "2026-09-12"); err == nil {

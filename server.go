@@ -39,6 +39,7 @@ type app struct {
 	next       map[string]int
 	frontpages *frontpages
 	weather    *weatherService
+	fearGreed  *fearGreedService
 	slideOrder []string
 	polymarket *polymarketService
 	kalshi     *kalshiService
@@ -76,7 +77,7 @@ func loadKey(dir string) ([]byte, error) {
 }
 
 func newApp(base string, refresh int, screenName string, quotes []string, key []byte) (*app, error) {
-	if screenName != "rss" && screenName != "cowsay" && screenName != "calendar" && screenName != "quarter" && screenName != "slideshow" && screenName != "weather" {
+	if screenName != "rss" && screenName != "cowsay" && screenName != "calendar" && screenName != "quarter" && screenName != "slideshow" && screenName != "weather" && screenName != "fear-greed" {
 		return nil, fmt.Errorf("unknown screen %q", screenName)
 	}
 	location, err := time.LoadLocation("America/New_York")
@@ -178,6 +179,20 @@ func (a *app) imageContext(ctx context.Context, id string) ([]byte, error) {
 		}
 		return addBatteryFooter(data, battery)
 	}
+	if strings.HasPrefix(id, "fear-greed-") {
+		base, battery, err := splitBatteryID(id)
+		if err != nil || a.fearGreed == nil {
+			return nil, os.ErrNotExist
+		}
+		if _, err := time.Parse("20060102T1504Z", strings.TrimPrefix(base, "fear-greed-")); err != nil {
+			return nil, os.ErrNotExist
+		}
+		data, err := a.fearGreed.render(ctx, a.now().In(a.location))
+		if err != nil {
+			return nil, err
+		}
+		return addBatteryFooter(data, battery)
+	}
 	if strings.HasPrefix(id, "weather-") {
 		base, battery, err := splitBatteryID(id)
 		if err != nil || a.weather == nil {
@@ -267,7 +282,7 @@ func (a *app) screenID(mode string, now time.Time) (string, error) {
 	if _, ok := newsModePage(mode); ok {
 		return mode + "-" + now.UTC().Format("20060102T1504Z"), nil
 	}
-	if mode == "calendar" || mode == "quarter" || mode == "weather" {
+	if mode == "calendar" || mode == "quarter" || mode == "weather" || mode == "fear-greed" {
 		return mode + "-" + now.UTC().Format("20060102T1504Z"), nil
 	}
 	return a.randomID()
@@ -286,6 +301,10 @@ func (a *app) playlist() []string {
 		case "weather":
 			if a.weather != nil {
 				slides = append(slides, "weather")
+			}
+		case "fear-greed":
+			if a.fearGreed != nil {
+				slides = append(slides, "fear-greed")
 			}
 		case "quote":
 			slides = append(slides, "cowsay")
@@ -337,7 +356,7 @@ func (a *app) nextDisplay(r *http.Request) (string, error) {
 	id, err := a.screenID(mode, a.now())
 	if err == nil {
 		id += readBattery(r.Header).suffix()
-		if !strings.HasPrefix(id, "rss-") && !strings.HasPrefix(id, "cover-") && !strings.HasPrefix(id, "weather-") && !strings.HasPrefix(id, "poly-") && !strings.HasPrefix(id, "kalshi-") {
+		if !strings.HasPrefix(id, "rss-") && !strings.HasPrefix(id, "cover-") && !strings.HasPrefix(id, "weather-") && !strings.HasPrefix(id, "fear-greed-") && !strings.HasPrefix(id, "poly-") && !strings.HasPrefix(id, "kalshi-") {
 			_, err = a.image(id)
 		}
 	}
@@ -355,7 +374,7 @@ func (a *app) nextDisplay(r *http.Request) (string, error) {
 func (a *app) routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
-		jsonResponse(w, map[string]any{"status": "ok", "screen": a.mode, "timezone": a.location.String(), "refresh_rate": a.refresh, "width": width, "height": height, "quotes": len(a.ids), "covers": len(a.frontpages.snapshot())})
+		jsonResponse(w, map[string]any{"status": "ok", "screen": a.mode, "timezone": a.location.String(), "refresh_rate": a.refresh, "width": width, "height": height, "quotes": len(a.ids), "covers": len(a.frontpages.snapshot()), "fear_greed": a.fearGreed != nil, "polymarket_pages": len(a.polymarket.pages()), "kalshi_pages": len(a.kalshi.pages())})
 	})
 	mux.HandleFunc("GET /api/setup", func(w http.ResponseWriter, r *http.Request) {
 		mac, err := net.ParseMAC(r.Header.Get("ID"))
@@ -407,7 +426,7 @@ func (a *app) routes() http.Handler {
 			return
 		}
 		id := strings.TrimSuffix(name, ".png")
-		isLive := strings.HasPrefix(id, "rss-") || strings.HasPrefix(id, "cover-") || strings.HasPrefix(id, "weather-") || strings.HasPrefix(id, "poly-") || strings.HasPrefix(id, "kalshi-")
+		isLive := strings.HasPrefix(id, "rss-") || strings.HasPrefix(id, "cover-") || strings.HasPrefix(id, "weather-") || strings.HasPrefix(id, "fear-greed-") || strings.HasPrefix(id, "poly-") || strings.HasPrefix(id, "kalshi-")
 		if isLive {
 			w.Header().Set("Cache-Control", "no-store, no-cache, max-age=0")
 			w.Header().Set("Pragma", "no-cache")
@@ -445,6 +464,9 @@ func (a *app) routes() http.Handler {
 		if a.weather != nil {
 			links += `<a href="/preview?screen=weather">Weather</a>`
 		}
+		if a.fearGreed != nil {
+			links += `<a href="/preview?screen=fear-greed">CNN Fear &amp; Greed</a>`
+		}
 		for _, cover := range covers {
 			links += fmt.Sprintf(`<a href="/preview?screen=%s">%s</a>`, cover.ID, html.EscapeString(cover.Name))
 		}
@@ -467,7 +489,7 @@ func (a *app) routes() http.Handler {
 			}
 		}
 		_, isNews := newsModePage(mode)
-		if !(isNews && a.news != nil) && mode != "slideshow" && mode != "calendar" && mode != "quarter" && mode != "cowsay" && !(mode == "weather" && a.weather != nil) && !isCover {
+		if !(isNews && a.news != nil) && mode != "slideshow" && mode != "calendar" && mode != "quarter" && mode != "cowsay" && !(mode == "weather" && a.weather != nil) && !(mode == "fear-greed" && a.fearGreed != nil) && !isCover {
 			http.Error(w, "unknown screen", 400)
 			return
 		}
